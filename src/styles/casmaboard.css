@@ -239,7 +239,30 @@
   padding-inline: 16px;
 }
 
-/* Shared surface styling for the bottom toolbar and the per-shape context menu. */
+/* Slot overlays — six anchor points for custom chrome. Wrapper itself is
+   transparent to pointer events; only its children opt back in via `pointer-
+   events: auto` (the toolbar/context-menu rules below). Centers use physical
+   `left: 50%` + `translateX(-50%)` so they sit visually centered regardless
+   of `dir`. */
+.cb-slot {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  max-width: calc(100% - 32px);
+}
+.cb-slot > * {
+  pointer-events: auto;
+}
+.cb-slot--top-left    { top: 16px;    left: 16px; }
+.cb-slot--top-right   { top: 16px;    right: 16px; }
+.cb-slot--top-center  { top: 16px;    left: 50%; transform: translateX(-50%); }
+.cb-slot--bottom-left { bottom: 16px; left: 16px; }
+.cb-slot--bottom-right{ bottom: 16px; right: 16px; }
+.cb-slot--bottom-center{ bottom: 16px; left: 50%; transform: translateX(-50%); }
+
+/* Shared surface styling for the default toolbar and the per-shape context
+   menu — just the visual chrome. Positioning is delegated to .cb-slot (for
+   the toolbar) or to inline left/top (for the floating context menu). */
 .cb-toolbar,
 .cb-context-menu {
   display: inline-flex;
@@ -254,21 +277,9 @@
   pointer-events: auto;
 }
 
-/* Bottom toolbar — tool picker, anchored bottom-center of the viewport. */
-.cb-toolbar {
-  position: absolute;
-  inset-block-end: 16px;
-  inset-inline-start: 50%;
-  transform: translateX(-50%);
-  max-width: calc(100% - 32px);
-  z-index: 3;
-}
-.cb-root[dir='rtl'] .cb-toolbar {
-  transform: translateX(50%);
-}
-
 /* Floating context menu — anchored under the selected shape; left/top come
-   from worldToScreen, translateX(-50%) centers horizontally. */
+   from worldToScreen, translateX(-50%) centers horizontally. Lives at the
+   viewport root, not in a slot, because its position is dynamic. */
 .cb-context-menu {
   position: absolute;
   transform: translateX(-50%);

@@ -1,34 +1,38 @@
-import type { Camera, StickyColor, StickyShape } from '../types';
-import type { Messages } from '../i18n';
+import type {
+  ContextMenuRender,
+  ContextMenuRenderProps,
+  StickyColor,
+  StickyShape,
+} from '../types';
 import { worldToScreen } from '../geometry/camera';
 import { ColorPicker } from './ColorPicker';
-
-interface Props {
-  shape: StickyShape;
-  camera: Camera;
-  messages: Messages;
-  onColorChange: (color: StickyColor) => void;
-  onDelete: () => void;
-}
 
 const GAP_PX = 14;
 
 /**
- * Floating context menu anchored under the selected sticky in screen space.
- * Re-rendered each frame the camera or shape moves; not in the world's 3D
- * transform context, so it stays flat and pixel-aligned regardless of tilt.
+ * Default per-shape context menu. Branches on `shape.type`:
+ *   - `sticky` → color picker + delete
+ *   - any other type → just a delete button
+ *
+ * Anchored under the selected shape in screen space (not inside the world's
+ * 3D transform), so it stays flat and pixel-aligned regardless of tilt.
+ *
+ * Override the entire surface by passing your own `contextMenu` prop on
+ * `<CasmaBoard>`. Reuse the wrapper but customize buttons by copy-pasting
+ * this module and editing the body.
  */
-export function ShapeContextMenu({
+export const DefaultContextMenu: ContextMenuRender = ({
   shape,
   camera,
   messages,
-  onColorChange,
-  onDelete,
-}: Props) {
+  patch,
+  remove,
+}: ContextMenuRenderProps) => {
   const screen = worldToScreen(camera, {
     x: shape.x + shape.w / 2,
     y: shape.y + shape.h,
   });
+
   return (
     <div
       className="cb-context-menu"
@@ -36,24 +40,30 @@ export function ShapeContextMenu({
       style={{ left: screen.x, top: screen.y + GAP_PX }}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <ColorPicker
-        value={shape.color}
-        onChange={onColorChange}
-        messages={messages}
-      />
-      <div className="cb-toolbar__divider" />
+      {shape.type === 'sticky' && (
+        <>
+          <ColorPicker
+            value={(shape as StickyShape).color}
+            onChange={(color: StickyColor) =>
+              patch({ color } as Partial<StickyShape>)
+            }
+            messages={messages}
+          />
+          <div className="cb-toolbar__divider" />
+        </>
+      )}
       <button
         type="button"
         className="cb-tool-btn cb-tool-btn--danger"
         title={messages.toolbar.delete}
         aria-label={messages.aria.deleteShape}
-        onClick={onDelete}
+        onClick={remove}
       >
         <DeleteIcon />
       </button>
     </div>
   );
-}
+};
 
 function DeleteIcon() {
   return (

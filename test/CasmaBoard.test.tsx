@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CasmaBoard } from '../src/CasmaBoard';
 import { es } from '../src/locales/es';
+import type { StickyShape } from '../src/types';
 
 describe('<CasmaBoard />', () => {
   it('renders the empty-state hint in English by default', () => {
@@ -48,7 +49,7 @@ describe('<CasmaBoard />', () => {
               h: 100,
               text: 'hello world',
               color: 'pink',
-            },
+            } as StickyShape,
           },
           order: ['a'],
         }}

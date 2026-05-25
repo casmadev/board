@@ -5,7 +5,19 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { CasmaBoardProps, StickyColor, StickyShape, ToolId } from './types';
+import type {
+  BoardContextValue,
+  CasmaBoardProps,
+  ContextMenuRender,
+  Shape,
+  ShapeKind,
+  Slots,
+  ToolId,
+} from './types';
+// Internal alias so we don't sprinkle `ShapeKind<any>` everywhere — kinds in
+// a heterogeneous array must be `any`-typed for variance reasons.
+type AnyShapeKind = ShapeKind<any>;
+import { BoardContext } from './context';
 import { useShapes } from './hooks/useShapes';
 import { useCamera } from './hooks/useCamera';
 import { useMessages } from './hooks/useMessages';
@@ -13,18 +25,16 @@ import { usePanZoom } from './hooks/usePanZoom';
 import { useDragShape } from './hooks/useDragShape';
 import {
   addShape,
-  createStickyShape,
   deleteShape,
-  setStickyColor,
-  setStickyText,
   updateShape,
 } from './state/reducer';
 import { getOrderedShapes } from './state/selectors';
 import { screenToWorld } from './geometry/camera';
 import { World } from './components/World';
-import { StickyNote } from './components/StickyNote';
-import { Toolbar } from './components/Toolbar';
-import { ShapeContextMenu } from './components/ShapeContextMenu';
+import { DefaultToolbar } from './components/DefaultToolbar';
+import { DefaultContextMenu } from './components/DefaultContextMenu';
+import { SlotOverlays } from './components/Slots';
+import { defaultShapeKinds } from './kinds';
 import { DEFAULT_DEPTH_3D, GRID_SIZE } from './constants';
 
 const fallbackId = (() => {
@@ -57,7 +67,33 @@ export function CasmaBoard(props: CasmaBoardProps) {
     background = 'dots',
     snapToGrid = false,
     generateId = defaultIdGen,
+    shapeKinds: shapeKindsProp,
+    defaultTool = 'select',
+    slots,
+    contextMenu,
   } = props;
+
+  // Default to the sticky-only set when the consumer doesn't pass shapeKinds.
+  // This is what makes `<CasmaBoard />` "just work" out of the box.
+  const shapeKinds = shapeKindsProp ?? defaultShapeKinds;
+
+  // tool id → kind, for click-to-create routing. A kind's `toolButton.toolId`
+  // overrides its `type` so multiple tools-per-kind stay possible.
+  const toolKindMap = useMemo(() => {
+    const m = new Map<string, AnyShapeKind>();
+    for (const k of shapeKinds) {
+      const id = k.toolButton?.toolId ?? k.type;
+      m.set(id, k);
+    }
+    return m;
+  }, [shapeKinds]);
+
+  // shape.type → kind, for rendering.
+  const kindByType = useMemo(() => {
+    const m = new Map<string, AnyShapeKind>();
+    for (const k of shapeKinds) m.set(k.type, k);
+    return m;
+  }, [shapeKinds]);
 
   const snap = useCallback(
     (n: number) => (snapToGrid ? Math.round(n / GRID_SIZE) * GRID_SIZE : n),
@@ -72,12 +108,12 @@ export function CasmaBoard(props: CasmaBoardProps) {
   const [camera, setCamera] = useCamera(cameraProp, defaultCamera, onCameraChange);
   const messages = useMessages(messagesOverride);
 
-  const [tool, setTool] = useState<ToolId>('select');
+  const [tool, setTool] = useState<ToolId>(defaultTool);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  // Per-shape version counter — bumped each time editing ends. StickyNote
-  // mixes this into its hash so the small random Z rotation rerolls every
-  // time the user "puts the note back".
+  // Per-shape version counter — bumped each time editing ends. Renderers can
+  // mix this into their hash so wobble/etc rerolls every time the user
+  // "puts the shape back".
   const [editVersions, setEditVersions] = useState<Record<string, number>>({});
 
   const endEdit = useCallback((id: string | null) => {
@@ -96,19 +132,47 @@ export function CasmaBoard(props: CasmaBoardProps) {
   const select = useCallback((id: string | null) => {
     setSelectedId(id);
     // Note: we deliberately do NOT reorder shapes here. Reordering would
-    // move the sticky's DOM node via insertBefore, which can release the
-    // active pointer capture and abort an in-progress drag. The selected
-    // sticky is brought visually on top via CSS z-index instead.
+    // move the DOM node via insertBefore, which can release the active
+    // pointer capture and abort an in-progress drag. The selected shape is
+    // brought visually on top via CSS z-index instead.
   }, []);
+
+  // Shape mutators wired once and reused by both the per-shape renderer and
+  // the BoardContext exposed to slot content. `setShapesState` is a callable
+  // ref-backed setter, so closure freshness isn't an issue.
+  const patchShape = useCallback(
+    (id: string, next: Partial<Shape>) => {
+      setShapesState((s) => updateShape(s, id, next));
+    },
+    [setShapesState],
+  );
+
+  const removeShape = useCallback(
+    (id: string) => {
+      setShapesState((s) => deleteShape(s, id));
+      // If the deleted shape was the selection, clear it — otherwise the
+      // context menu would point at a missing shape next render.
+      setSelectedId((sel) => (sel === id ? null : sel));
+    },
+    [setShapesState],
+  );
+
+  const addShapeFn = useCallback(
+    (shape: Shape) => {
+      setShapesState((s) => addShape(s, shape));
+    },
+    [setShapesState],
+  );
 
   const dragHandlersFactory = useDragShape({
     cameraRef,
     onSelect: select,
-    onMove: (id, x, y) =>
-      setShapesState((s) => updateShape(s, id, { x: snap(x), y: snap(y) })),
+    onMove: (id, x, y) => patchShape(id, { x: snap(x), y: snap(y) }),
   });
 
-  // Click on empty viewport: create sticky (sticky tool) or deselect.
+  // Click on empty viewport: create a shape (for any non-select tool) or
+  // deselect (for select). Custom shape kinds get the click for free because
+  // we route through `toolKindMap`.
   const handleViewportPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       // Let pan handler claim middle-button / space-pan first
@@ -125,21 +189,41 @@ export function CasmaBoard(props: CasmaBoardProps) {
       const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       const world = screenToWorld(cameraRef.current, screen);
 
-      if (tool === 'sticky') {
-        const sticky = createStickyShape(generateId(), world.x, world.y);
-        if (snapToGrid) {
-          sticky.x = snap(sticky.x);
-          sticky.y = snap(sticky.y);
+      if (tool !== 'select') {
+        const kind = toolKindMap.get(tool);
+        if (!kind) {
+          // Unknown tool id — treat as deselect. (A consumer might set a tool
+          // string that doesn't map to any kind; degrading gracefully beats
+          // throwing.)
+          select(null);
+          endEdit(editingId);
+          return;
         }
-        setShapesState((s) => addShape(s, sticky));
-        select(sticky.id);
+        const created = kind.create(generateId(), world.x, world.y);
+        if (snapToGrid) {
+          created.x = snap(created.x);
+          created.y = snap(created.y);
+        }
+        addShapeFn(created);
+        select(created.id);
         setTool('select');
       } else {
         select(null);
         endEdit(editingId);
       }
     },
-    [panZoom, tool, generateId, setShapesState, select, endEdit, editingId, snap, snapToGrid],
+    [
+      panZoom,
+      tool,
+      toolKindMap,
+      generateId,
+      addShapeFn,
+      select,
+      endEdit,
+      editingId,
+      snap,
+      snapToGrid,
+    ],
   );
 
   // Keyboard: delete selected shape, escape to deselect / leave edit.
@@ -152,117 +236,155 @@ export function CasmaBoard(props: CasmaBoardProps) {
         setSelectedId(null);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         e.preventDefault();
-        setShapesState((s) => deleteShape(s, selectedId));
-        setSelectedId(null);
+        removeShape(selectedId);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedId, editingId, setShapesState, endEdit]);
+  }, [selectedId, editingId, removeShape, endEdit]);
 
   const ordered = useMemo(() => getOrderedShapes(shapesState), [shapesState]);
-  const selectedShape = selectedId ? shapesState.shapes[selectedId] : undefined;
-  const selectedSticky =
-    selectedShape && selectedShape.type === 'sticky'
-      ? (selectedShape as StickyShape)
-      : undefined;
+  const selectedShape: Shape | undefined =
+    selectedId !== null ? shapesState.shapes[selectedId] : undefined;
 
-  const handleCommitEdit = useCallback(
-    (id: string, text: string) => {
-      setShapesState((s) => setStickyText(s, id, text));
-      endEdit(id);
-    },
-    [setShapesState, endEdit],
+  // Build the BoardContext value. Memoized so identity-stable consumers
+  // (custom slot components that useMemo on parts of it) don't re-render on
+  // every shape mutation needlessly. The whole value still changes whenever
+  // any field does — that's intentional; React.memo at the consumer is the
+  // right place to do finer-grained skipping.
+  const ctx: BoardContextValue = useMemo(
+    () => ({
+      tool,
+      setTool,
+      camera,
+      setCamera,
+      shapes: shapesState,
+      setShapes: setShapesState,
+      shapeKinds,
+      messages,
+      direction,
+      selectedId,
+      selectedShape,
+      setSelectedId,
+      editingId,
+      setEditingId,
+      patchShape,
+      removeShape,
+      addShape: addShapeFn,
+      viewportRef,
+    }),
+    [
+      tool,
+      camera,
+      setCamera,
+      shapesState,
+      setShapesState,
+      shapeKinds,
+      messages,
+      direction,
+      selectedId,
+      selectedShape,
+      editingId,
+      patchShape,
+      removeShape,
+      addShapeFn,
+    ],
   );
 
-  const handleColorChange = useCallback(
-    (color: StickyColor) => {
-      if (!selectedSticky) return;
-      setShapesState((s) => setStickyColor(s, selectedSticky.id, color));
-    },
-    [selectedSticky, setShapesState],
-  );
+  // Resolve slot content. The default toolbar lives in bottomCenter unless
+  // the consumer overrides that slot OR passes `hideUI`. Passing `null`
+  // explicitly into bottomCenter suppresses the default (useful when you
+  // want the slot truly empty).
+  const resolvedSlots: Slots = useMemo(() => {
+    if (hideUI) return {};
+    const out: Slots = { ...(slots ?? {}) };
+    if (!('bottomCenter' in (slots ?? {}))) {
+      out.bottomCenter = <DefaultToolbar />;
+    }
+    return out;
+  }, [slots, hideUI]);
 
-  const handleDelete = useCallback(() => {
-    if (!selectedId) return;
-    setShapesState((s) => deleteShape(s, selectedId));
-    setSelectedId(null);
-  }, [selectedId, setShapesState]);
+  const renderContextMenu: ContextMenuRender = contextMenu ?? DefaultContextMenu;
 
   const cursorMode =
-    tool === 'sticky'
+    tool !== 'select'
       ? 'cb-root--cursor-add'
       : panZoom.isSpaceHeld()
         ? 'cb-root--cursor-grab'
         : '';
 
   return (
-    <div
-      className={`cb-root ${cursorMode}${className ? ` ${className}` : ''}`}
-      style={style}
-      dir={direction}
-      role="application"
-      aria-label={messages.aria.canvas}
-      data-tool={tool}
-    >
+    <BoardContext.Provider value={ctx}>
       <div
-        ref={viewportRef}
-        className={`cb-viewport cb-viewport--bg-${background}`}
-        style={{
-          ...(depth3d > 0 ? { perspective: `${depth3d}px` } : null),
-          ...(background !== 'none'
-            ? {
-                backgroundSize: `${GRID_SIZE * camera.zoom}px ${GRID_SIZE * camera.zoom}px`,
-                backgroundPosition: `${camera.x}px ${camera.y}px`,
-              }
-            : null),
-        }}
-        onPointerDown={handleViewportPointerDown}
-        onPointerMove={panZoom.onPointerMove}
-        onPointerUp={panZoom.onPointerUp}
-        onPointerCancel={panZoom.onPointerCancel}
+        className={`cb-root ${cursorMode}${className ? ` ${className}` : ''}`}
+        style={style}
+        dir={direction}
+        role="application"
+        aria-label={messages.aria.canvas}
+        data-tool={tool}
       >
-        <World camera={camera}>
-          {ordered.map((shape) => {
-            const handlers = dragHandlersFactory(shape.id, shape.x, shape.y);
-            return (
-              <StickyNote
-                key={shape.id}
-                shape={shape}
-                selected={selectedId === shape.id}
-                editing={editingId === shape.id}
-                editVersion={editVersions[shape.id] ?? 0}
-                textOverflow={textOverflow}
-                depth3d={depth3d}
-                messages={messages}
-                pointerHandlers={handlers}
-                onDoubleClick={() => setEditingId(shape.id)}
-                onFocus={() => select(shape.id)}
-                onCommitEdit={(text) => handleCommitEdit(shape.id, text)}
-                onCancelEdit={() => endEdit(shape.id)}
-              />
-            );
-          })}
-        </World>
+        <div
+          ref={viewportRef}
+          className={`cb-viewport cb-viewport--bg-${background}`}
+          style={{
+            ...(depth3d > 0 ? { perspective: `${depth3d}px` } : null),
+            ...(background !== 'none'
+              ? {
+                  backgroundSize: `${GRID_SIZE * camera.zoom}px ${GRID_SIZE * camera.zoom}px`,
+                  backgroundPosition: `${camera.x}px ${camera.y}px`,
+                }
+              : null),
+          }}
+          onPointerDown={handleViewportPointerDown}
+          onPointerMove={panZoom.onPointerMove}
+          onPointerUp={panZoom.onPointerUp}
+          onPointerCancel={panZoom.onPointerCancel}
+        >
+          <World camera={camera}>
+            {ordered.map((shape) => {
+              const kind = kindByType.get(shape.type);
+              if (!kind) return null; // unknown shape type — skip silently
+              const Component = kind.Component;
+              const handlers = dragHandlersFactory(shape.id, shape.x, shape.y);
+              return (
+                <Component
+                  key={shape.id}
+                  shape={shape}
+                  selected={selectedId === shape.id}
+                  editing={editingId === shape.id}
+                  editVersion={editVersions[shape.id] ?? 0}
+                  textOverflow={textOverflow}
+                  depth3d={depth3d}
+                  messages={messages}
+                  pointerHandlers={handlers}
+                  onSelect={() => select(shape.id)}
+                  onStartEdit={() => setEditingId(shape.id)}
+                  onCommitEdit={() => endEdit(shape.id)}
+                  onCancelEdit={() => endEdit(shape.id)}
+                  patch={(next) => patchShape(shape.id, next)}
+                />
+              );
+            })}
+          </World>
 
-        {!hideUI && selectedSticky && editingId !== selectedSticky.id && (
-          <ShapeContextMenu
-            shape={selectedSticky}
-            camera={camera}
-            messages={messages}
-            onColorChange={handleColorChange}
-            onDelete={handleDelete}
-          />
-        )}
+          {!hideUI &&
+            selectedShape &&
+            editingId !== selectedShape.id &&
+            renderContextMenu({
+              shape: selectedShape,
+              camera,
+              messages,
+              patch: (next) => patchShape(selectedShape.id, next),
+              remove: () => removeShape(selectedShape.id),
+            })}
 
-        {ordered.length === 0 && (
-          <div className="cb-empty-hint">{messages.hints.emptyCanvas}</div>
-        )}
+          {ordered.length === 0 && (
+            <div className="cb-empty-hint">{messages.hints.emptyCanvas}</div>
+          )}
+        </div>
+
+        <SlotOverlays slots={resolvedSlots} />
       </div>
-
-      {!hideUI && (
-        <Toolbar messages={messages} tool={tool} onToolChange={setTool} />
-      )}
-    </div>
+    </BoardContext.Provider>
   );
 }

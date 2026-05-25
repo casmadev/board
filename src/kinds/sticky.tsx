@@ -1,34 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { StickyShape, TextOverflow } from '../types';
-import type { Messages } from '../i18n';
+import type { ShapeKind, ShapeRenderProps, StickyShape } from '../types';
 import { fitText, truncateToFit } from '../geometry/fitText';
 import {
+  DEFAULT_STICKY_SIZE,
   STICKY_EDIT_LIFT_PX,
   STICKY_FONT_MAX,
   STICKY_FONT_MIN,
   STICKY_TILT_X_DEG,
   STICKY_Z_ROT_MAX_DEG,
 } from '../constants';
-
-interface Props {
-  shape: StickyShape;
-  selected: boolean;
-  editing: boolean;
-  editVersion: number;
-  textOverflow: TextOverflow;
-  depth3d: number;
-  messages: Messages;
-  pointerHandlers: {
-    onPointerDown: (e: React.PointerEvent<HTMLElement>) => void;
-    onPointerMove: (e: React.PointerEvent<HTMLElement>) => void;
-    onPointerUp: (e: React.PointerEvent<HTMLElement>) => void;
-    onPointerCancel: (e: React.PointerEvent<HTMLElement>) => void;
-  };
-  onDoubleClick: () => void;
-  onFocus: () => void;
-  onCommitEdit: (text: string) => void;
-  onCancelEdit: () => void;
-}
+import { createStickyShape } from '../state/reducer';
 
 const BLOCK_TAGS = /^(DIV|P|H[1-6]|UL|OL|LI|BLOCKQUOTE|PRE|SECTION|ARTICLE)$/;
 
@@ -97,6 +78,11 @@ function hashId(id: string, salt: number): number {
   return h >>> 0;
 }
 
+/**
+ * Default render component for sticky-note shapes. Exported so consumers can
+ * compose it (e.g. as part of a custom kind that extends sticky behavior).
+ * Usually you just register `stickyKind` instead of using this directly.
+ */
 export function StickyNote({
   shape,
   selected,
@@ -106,11 +92,12 @@ export function StickyNote({
   depth3d,
   messages,
   pointerHandlers,
-  onDoubleClick,
-  onFocus,
+  onSelect,
+  onStartEdit,
   onCommitEdit,
   onCancelEdit,
-}: Props) {
+  patch,
+}: ShapeRenderProps<StickyShape>) {
   const textRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<string>(shape.text);
   const settledRef = useRef(false);
@@ -180,7 +167,8 @@ export function StickyNote({
     return () => {
       if (settledRef.current) return;
       if (!dirtyRef.current) return;
-      onCommitEdit(draftRef.current);
+      patch({ text: draftRef.current });
+      onCommitEdit();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
@@ -257,8 +245,8 @@ export function StickyNote({
       role="group"
       tabIndex={editing ? -1 : 0}
       aria-label={`${messages.aria.sticky}${shape.text ? `: ${shape.text}` : ''}`}
-      onFocus={editing ? undefined : onFocus}
-      onDoubleClick={editing ? undefined : onDoubleClick}
+      onFocus={editing ? undefined : onSelect}
+      onDoubleClick={editing ? undefined : onStartEdit}
       {...handlers}
     >
       {editing && scrollMetrics.overflow && (
@@ -338,7 +326,8 @@ export function StickyNote({
             ? () => {
                 if (settledRef.current) return;
                 settledRef.current = true;
-                onCommitEdit(draftRef.current);
+                patch({ text: draftRef.current });
+                onCommitEdit();
               }
             : undefined
         }
@@ -354,7 +343,8 @@ export function StickyNote({
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
                   settledRef.current = true;
-                  onCommitEdit(draftRef.current);
+                  patch({ text: draftRef.current });
+                  onCommitEdit();
                   return;
                 }
                 e.stopPropagation();
@@ -365,3 +355,31 @@ export function StickyNote({
     </div>
   );
 }
+
+/** Icon rendered in the default toolbar's sticky-note button. Exported so
+ *  consumers building their own toolbar can reuse it. */
+export function StickyIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden focusable={false}>
+      <path d="M3 3h11l3 3v11H3V3z" fill="currentColor" opacity="0.9" />
+      <path d="M14 3v3h3" stroke="rgba(0,0,0,0.25)" fill="none" strokeWidth="1" />
+    </svg>
+  );
+}
+
+/**
+ * The default sticky-note shape kind. Includes the renderer, a factory
+ * (delegates to `createStickyShape`), and a toolbar button that activates a
+ * `'sticky'` tool. Exported individually and re-exported in `defaultShapeKinds`.
+ */
+export const stickyKind: ShapeKind<StickyShape> = {
+  type: 'sticky',
+  defaultSize: DEFAULT_STICKY_SIZE,
+  create: (id, x, y) => createStickyShape(id, x, y),
+  Component: StickyNote,
+  toolButton: {
+    toolId: 'sticky',
+    icon: <StickyIcon />,
+    label: (m) => m.toolbar.stickyNote,
+  },
+};

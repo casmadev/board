@@ -12,7 +12,13 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "baseUrl": ".",
+    "paths": {
+      "@casmadev/board": ["../../src/index.ts"],
+      "@casmadev/board/locales": ["../../src/locales/index.ts"],
+      "@casmadev/board/styles.css": ["../../src/styles/casmaboard.css"]
+    }
   },
   "include": ["src"]
 }
