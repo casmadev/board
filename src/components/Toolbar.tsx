@@ -105,11 +105,23 @@ function StickyIcon() {
 
 function DeleteIcon() {
   return (
-    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden focusable={false}>
-      <path
-        d="M6 6h8l-1 10H7L6 6zm2-3h4v2H8V3z"
-        fill="currentColor"
-      />
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable={false}
+    >
+      <path d="M4 7h16" />
+      <path d="M9 4h6a1 1 0 0 1 1 1v2H8V5a1 1 0 0 1 1-1z" />
+      <path d="M6 7l1 12.2A2 2 0 0 0 9 21h6a2 2 0 0 0 2-1.8L18 7" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
     </svg>
   );
 }

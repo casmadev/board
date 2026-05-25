@@ -35,6 +35,12 @@ export type Direction = 'ltr' | 'rtl';
 
 export type ToolId = 'select' | 'sticky';
 
+/** How sticky-note text behaves when it would overflow the note bounds.
+ *  - 'shrink-to-fit' (default): font shrinks until all text fits, never truncates.
+ *  - 'truncate': font stays at the base size and overflowing lines are clipped
+ *    with an ellipsis. */
+export type TextOverflow = 'shrink-to-fit' | 'truncate';
+
 export interface CasmaBoardProps {
   shapes?: ShapesState;
   defaultShapes?: ShapesState;
@@ -50,6 +56,14 @@ export interface CasmaBoardProps {
   hideUI?: boolean;
   className?: string;
   style?: React.CSSProperties;
+
+  textOverflow?: TextOverflow;
+
+  /** CSS perspective distance applied to the viewport, in pixels. Drives the
+   *  3D tilt + parallax effect for sticky notes — smaller values produce a
+   *  stronger perspective. Set to `0` to disable all 3D effects (stickies
+   *  render flat with the slight tilt as a plain 2D rotation). Default: 800. */
+  depth3d?: number;
 
   generateId?: () => string;
 }

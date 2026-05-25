@@ -25,7 +25,13 @@
 
   /* layout */
   --cb-toolbar-radius: 12px;
-  --cb-sticky-radius: 6px;
+  --cb-sticky-radius: 0;
+  --cb-sticky-padding: 14px;
+
+  /* typography */
+  --cb-sticky-font: 'Caveat', 'Bradley Hand', 'Bradley Hand ITC',
+    'Marker Felt', 'Segoe Script', 'Comic Sans MS', cursive;
+  --cb-sticky-font-weight: 600;
 
   position: relative;
   width: 100%;
@@ -68,7 +74,10 @@
   background-position: 0 0;
 }
 
-/* World: transformed layer; children positioned in world coords */
+/* World: transformed layer; children positioned in world coords.
+   `transform-style: preserve-3d` lets sticky `translateZ` survive the
+   world's own 2D pan/zoom transform so the viewport's perspective
+   produces real parallax. Harmless when depth is disabled. */
 .cb-world {
   position: absolute;
   inset-inline-start: 0;
@@ -76,12 +85,13 @@
   width: 0;
   height: 0;
   will-change: transform;
+  transform-style: preserve-3d;
 }
 
 /* Sticky note */
 .cb-sticky {
   position: absolute;
-  padding: 12px;
+  padding: var(--cb-sticky-padding);
   border-radius: var(--cb-sticky-radius);
   box-shadow: var(--cb-sticky-shadow);
   cursor: grab;
@@ -90,6 +100,14 @@
   color: #1f1f1f;
   overflow: hidden;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center top;
+  /* Animates the lift on edit-enter and the put-back + Z-rotation reroll on
+     edit-exit. Easing is slightly springy for the "small human errors" feel. */
+  transition:
+    transform 380ms cubic-bezier(0.2, 0.85, 0.3, 1.05),
+    box-shadow 240ms ease-out;
 }
 .cb-sticky:active {
   cursor: grabbing;
@@ -104,34 +122,45 @@
   box-shadow:
     var(--cb-sticky-shadow),
     var(--cb-selection-ring);
+  /* Visually bring the selected sticky on top without reordering the DOM
+     (DOM reordering can release pointer capture and abort an in-flight drag). */
+  z-index: 1;
 }
 .cb-sticky--editing {
-  visibility: hidden;
+  /* Editing happens in place. Stronger shadow communicates the "lifted off
+     the canvas" state; the transform itself supplies the translateZ. */
+  box-shadow:
+    0 18px 32px rgba(0, 0, 0, 0.18),
+    var(--cb-selection-ring);
+  cursor: text;
+  z-index: 2;
+}
+.cb-sticky--editing .cb-sticky__text {
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
+  outline: none;
+  /* Some browsers can lose the caret inside transformed/contenteditable
+     contexts unless caret-color is explicitly set. */
+  caret-color: var(--cb-text);
 }
 
 .cb-sticky__text {
-  flex: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 16px;
+  overflow-wrap: anywhere;
+  font-family: var(--cb-sticky-font);
+  font-weight: var(--cb-sticky-font-weight);
+  font-size: 32px;
+  line-height: 1.2;
   pointer-events: none;
-  min-height: 1em;
-}
-
-/* Edit overlay — fixed in screen space, sits above the world */
-.cb-edit-overlay {
-  position: absolute;
-  border: none;
-  outline: 2px solid var(--cb-accent);
-  border-radius: var(--cb-sticky-radius);
-  background: var(--cb-sticky-yellow);
-  box-shadow: var(--cb-sticky-shadow);
-  resize: none;
-  font-family: inherit;
-  line-height: 1.4;
-  color: #1f1f1f;
-  user-select: text;
-  -webkit-user-select: text;
+  overflow: hidden;
 }
 
 /* Empty hint */

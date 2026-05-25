@@ -23,5 +23,6 @@ export type {
   ShapesState,
   StickyColor,
   StickyShape,
+  TextOverflow,
   ToolId,
 } from './types';

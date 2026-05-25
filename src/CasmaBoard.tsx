@@ -13,10 +13,8 @@ import { usePanZoom } from './hooks/usePanZoom';
 import { useDragShape } from './hooks/useDragShape';
 import {
   addShape,
-  bringToFront,
   createStickyShape,
   deleteShape,
-  moveShape,
   setStickyColor,
   setStickyText,
   updateShape,
@@ -25,10 +23,8 @@ import { getOrderedShapes } from './state/selectors';
 import { screenToWorld } from './geometry/camera';
 import { World } from './components/World';
 import { StickyNote } from './components/StickyNote';
-import { EditOverlay } from './components/EditOverlay';
 import { Toolbar } from './components/Toolbar';
-
-const BASE_FONT_SIZE = 16;
+import { DEFAULT_DEPTH_3D } from './constants';
 
 const fallbackId = (() => {
   let n = 0;
@@ -55,6 +51,8 @@ export function CasmaBoard(props: CasmaBoardProps) {
     hideUI = false,
     className,
     style,
+    textOverflow = 'shrink-to-fit',
+    depth3d = DEFAULT_DEPTH_3D,
     generateId = defaultIdGen,
   } = props;
 
@@ -69,6 +67,17 @@ export function CasmaBoard(props: CasmaBoardProps) {
   const [tool, setTool] = useState<ToolId>('select');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Per-shape version counter — bumped each time editing ends. StickyNote
+  // mixes this into its hash so the small random Z rotation rerolls every
+  // time the user "puts the note back".
+  const [editVersions, setEditVersions] = useState<Record<string, number>>({});
+
+  const endEdit = useCallback((id: string | null) => {
+    setEditingId(null);
+    if (id) {
+      setEditVersions((v) => ({ ...v, [id]: (v[id] ?? 0) + 1 }));
+    }
+  }, []);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef(camera);
@@ -78,8 +87,11 @@ export function CasmaBoard(props: CasmaBoardProps) {
 
   const select = useCallback((id: string | null) => {
     setSelectedId(id);
-    if (id) setShapesState((s) => bringToFront(s, id));
-  }, [setShapesState]);
+    // Note: we deliberately do NOT reorder shapes here. Reordering would
+    // move the sticky's DOM node via insertBefore, which can release the
+    // active pointer capture and abort an in-progress drag. The selected
+    // sticky is brought visually on top via CSS z-index instead.
+  }, []);
 
   const dragHandlersFactory = useDragShape({
     cameraRef,
@@ -112,10 +124,10 @@ export function CasmaBoard(props: CasmaBoardProps) {
         setTool('select');
       } else {
         select(null);
-        setEditingId(null);
+        endEdit(editingId);
       }
     },
-    [panZoom, tool, generateId, setShapesState, select],
+    [panZoom, tool, generateId, setShapesState, select, endEdit, editingId],
   );
 
   // Keyboard: delete selected shape, escape to deselect / leave edit.
@@ -124,7 +136,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (e.key === 'Escape') {
-        setEditingId(null);
+        endEdit(editingId);
         setSelectedId(null);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         e.preventDefault();
@@ -134,17 +146,22 @@ export function CasmaBoard(props: CasmaBoardProps) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedId, setShapesState]);
+  }, [selectedId, editingId, setShapesState, endEdit]);
 
   const ordered = useMemo(() => getOrderedShapes(shapesState), [shapesState]);
   const selectedShape = selectedId ? shapesState.shapes[selectedId] : undefined;
-  const editingShape = editingId ? shapesState.shapes[editingId] : undefined;
-  const editingSticky =
-    editingShape && editingShape.type === 'sticky' ? editingShape : undefined;
   const selectedSticky =
     selectedShape && selectedShape.type === 'sticky'
       ? (selectedShape as StickyShape)
       : undefined;
+
+  const handleCommitEdit = useCallback(
+    (id: string, text: string) => {
+      setShapesState((s) => setStickyText(s, id, text));
+      endEdit(id);
+    },
+    [setShapesState, endEdit],
+  );
 
   const handleColorChange = useCallback(
     (color: StickyColor) => {
@@ -179,6 +196,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
       <div
         ref={viewportRef}
         className="cb-viewport"
+        style={depth3d > 0 ? { perspective: `${depth3d}px` } : undefined}
         onPointerDown={handleViewportPointerDown}
         onPointerMove={panZoom.onPointerMove}
         onPointerUp={panZoom.onPointerUp}
@@ -193,27 +211,19 @@ export function CasmaBoard(props: CasmaBoardProps) {
                 shape={shape}
                 selected={selectedId === shape.id}
                 editing={editingId === shape.id}
+                editVersion={editVersions[shape.id] ?? 0}
+                textOverflow={textOverflow}
+                depth3d={depth3d}
                 messages={messages}
                 pointerHandlers={handlers}
                 onDoubleClick={() => setEditingId(shape.id)}
                 onFocus={() => select(shape.id)}
+                onCommitEdit={(text) => handleCommitEdit(shape.id, text)}
+                onCancelEdit={() => endEdit(shape.id)}
               />
             );
           })}
         </World>
-
-        {editingSticky && (
-          <EditOverlay
-            shape={editingSticky}
-            camera={camera}
-            baseFontSize={BASE_FONT_SIZE}
-            onCommit={(text) => {
-              setShapesState((s) => setStickyText(s, editingSticky.id, text));
-              setEditingId(null);
-            }}
-            onCancel={() => setEditingId(null)}
-          />
-        )}
 
         {ordered.length === 0 && (
           <div className="cb-empty-hint">{messages.hints.emptyCanvas}</div>
