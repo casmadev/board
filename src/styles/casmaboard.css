@@ -1,0 +1,240 @@
+/* @casmadev/board — base stylesheet.
+   All selectors are scoped to `.cb-root`. Theming via CSS variables.
+   Layout uses logical properties so `dir="rtl"` flips naturally. */
+
+.cb-root {
+  /* color tokens */
+  --cb-bg: #fafaf7;
+  --cb-grid: rgba(0, 0, 0, 0.06);
+  --cb-surface: #ffffff;
+  --cb-surface-border: rgba(0, 0, 0, 0.1);
+  --cb-text: #1a1a1a;
+  --cb-text-muted: rgba(0, 0, 0, 0.55);
+  --cb-accent: #2563eb;
+  --cb-danger: #dc2626;
+  --cb-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+  --cb-sticky-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+  --cb-selection-ring: 0 0 0 2px var(--cb-accent);
+
+  /* sticky palette */
+  --cb-sticky-yellow: #ffe66d;
+  --cb-sticky-pink: #ffb3c6;
+  --cb-sticky-blue: #a8d8ff;
+  --cb-sticky-green: #c8e6a0;
+  --cb-sticky-purple: #d4baff;
+
+  /* layout */
+  --cb-toolbar-radius: 12px;
+  --cb-sticky-radius: 6px;
+
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  overflow: hidden;
+  background: var(--cb-bg);
+  color: var(--cb-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  contain: layout paint;
+}
+
+.cb-root *,
+.cb-root *::before,
+.cb-root *::after {
+  box-sizing: border-box;
+}
+
+.cb-root--cursor-add {
+  cursor: crosshair;
+}
+.cb-root--cursor-grab {
+  cursor: grab;
+}
+
+/* Viewport: clipped, captures all gestures */
+.cb-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-image:
+    radial-gradient(circle, var(--cb-grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: 0 0;
+}
+
+/* World: transformed layer; children positioned in world coords */
+.cb-world {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
+}
+
+/* Sticky note */
+.cb-sticky {
+  position: absolute;
+  padding: 12px;
+  border-radius: var(--cb-sticky-radius);
+  box-shadow: var(--cb-sticky-shadow);
+  cursor: grab;
+  outline: none;
+  background: var(--cb-sticky-yellow);
+  color: #1f1f1f;
+  overflow: hidden;
+  display: flex;
+}
+.cb-sticky:active {
+  cursor: grabbing;
+}
+.cb-sticky--yellow { background: var(--cb-sticky-yellow); }
+.cb-sticky--pink   { background: var(--cb-sticky-pink); }
+.cb-sticky--blue   { background: var(--cb-sticky-blue); }
+.cb-sticky--green  { background: var(--cb-sticky-green); }
+.cb-sticky--purple { background: var(--cb-sticky-purple); }
+
+.cb-sticky--selected {
+  box-shadow:
+    var(--cb-sticky-shadow),
+    var(--cb-selection-ring);
+}
+.cb-sticky--editing {
+  visibility: hidden;
+}
+
+.cb-sticky__text {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 16px;
+  pointer-events: none;
+  min-height: 1em;
+}
+
+/* Edit overlay — fixed in screen space, sits above the world */
+.cb-edit-overlay {
+  position: absolute;
+  border: none;
+  outline: 2px solid var(--cb-accent);
+  border-radius: var(--cb-sticky-radius);
+  background: var(--cb-sticky-yellow);
+  box-shadow: var(--cb-sticky-shadow);
+  resize: none;
+  font-family: inherit;
+  line-height: 1.4;
+  color: #1f1f1f;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Empty hint */
+.cb-empty-hint {
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-start: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--cb-text-muted);
+  font-size: 14px;
+  text-align: center;
+  pointer-events: none;
+  padding-inline: 16px;
+}
+
+/* Toolbar */
+.cb-toolbar {
+  position: absolute;
+  inset-block-end: 16px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: var(--cb-surface);
+  border: 1px solid var(--cb-surface-border);
+  border-radius: var(--cb-toolbar-radius);
+  box-shadow: var(--cb-shadow);
+  user-select: none;
+  pointer-events: auto;
+  max-width: calc(100% - 32px);
+}
+.cb-root[dir='rtl'] .cb-toolbar {
+  transform: translateX(50%);
+}
+
+.cb-toolbar__group {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.cb-toolbar__divider {
+  width: 1px;
+  align-self: stretch;
+  margin-inline: 4px;
+  background: var(--cb-surface-border);
+}
+
+.cb-tool-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--cb-text);
+  transition: background 120ms ease;
+}
+.cb-tool-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+.cb-tool-btn--active {
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--cb-accent);
+}
+.cb-tool-btn--danger {
+  color: var(--cb-danger);
+}
+.cb-tool-btn--danger:hover {
+  background: rgba(220, 38, 38, 0.1);
+}
+
+/* Color picker */
+.cb-color-picker {
+  display: inline-flex;
+  gap: 4px;
+  padding-inline: 4px;
+}
+
+.cb-color-swatch {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+.cb-color-swatch:hover {
+  transform: scale(1.08);
+}
+.cb-color-swatch--active {
+  border-color: var(--cb-accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+.cb-color-swatch--yellow { background: var(--cb-sticky-yellow); }
+.cb-color-swatch--pink   { background: var(--cb-sticky-pink); }
+.cb-color-swatch--blue   { background: var(--cb-sticky-blue); }
+.cb-color-swatch--green  { background: var(--cb-sticky-green); }
+.cb-color-swatch--purple { background: var(--cb-sticky-purple); }
