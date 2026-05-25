@@ -21,6 +21,10 @@ export const ZOOM_WHEEL_STEP = 0.0015;
 
 export const DRAG_THRESHOLD_PX = 4;
 
+/** Grid cell size in world pixels. Used by the dot/line backgrounds and the
+ *  optional snap-to-grid feature. */
+export const GRID_SIZE = 24;
+
 /** A single low X-axis tilt (degrees) applied to every sticky when 3D is on —
  *  subtle perspective wobble that responds to camera motion. */
 export const STICKY_TILT_X_DEG = 5;

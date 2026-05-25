@@ -63,15 +63,25 @@
   cursor: grab;
 }
 
-/* Viewport: clipped, captures all gestures */
+/* Viewport: clipped, captures all gestures. The background-image is set by
+   the bg-style modifier below; background-size and background-position are
+   set inline from camera state so the pattern pans + zooms with the world. */
 .cb-viewport {
   position: absolute;
   inset: 0;
   overflow: hidden;
+}
+.cb-viewport--bg-dots {
   background-image:
     radial-gradient(circle, var(--cb-grid) 1px, transparent 1px);
-  background-size: 24px 24px;
-  background-position: 0 0;
+}
+.cb-viewport--bg-grid {
+  background-image:
+    linear-gradient(to right, var(--cb-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--cb-grid) 1px, transparent 1px);
+}
+.cb-viewport--bg-none {
+  background-image: none;
 }
 
 /* World: transformed layer; children positioned in world coords.
@@ -144,13 +154,59 @@
   /* Some browsers can lose the caret inside transformed/contenteditable
      contexts unless caret-color is explicitly set. */
   caret-color: var(--cb-text);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* We paint our own scrollbar overlay (.cb-sticky__scrollbar) — hide the
+     native one fully so it never sneaks in on hover/scroll. */
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* old Edge / IE */
+}
+.cb-sticky--editing .cb-sticky__text::-webkit-scrollbar {
+  display: none;                  /* WebKit / Blink */
+}
+
+/* Custom scrollbar rendered as a sibling of the contenteditable. Pure
+   indicator (no drag interaction) — scrolling happens via wheel / keyboard /
+   caret movement on the underlying contenteditable. */
+.cb-sticky__scrollbar {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-block-end: 6px;
+  inset-inline-end: 4px;
+  width: 8px;
+  background: rgba(0, 0, 0, 0.14);
+  border-radius: 4px;
+  z-index: 1;
+  /* Track itself is inert — only the thumb is interactive; clicks on the
+     track stay here rather than reaching the contenteditable behind. */
+  pointer-events: auto;
+}
+.cb-sticky__scrollthumb {
+  position: absolute;
+  inset-inline: 0;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  min-height: 18px;
+  cursor: grab;
+  touch-action: none;
+  transition: background-color 120ms ease;
+}
+.cb-sticky__scrollthumb:hover {
+  background: rgba(0, 0, 0, 0.62);
+}
+.cb-sticky__scrollthumb:active {
+  background: rgba(0, 0, 0, 0.7);
+  cursor: grabbing;
 }
 
 .cb-sticky__text {
   width: 100%;
   height: 100%;
   display: flex;
-  align-items: center;
+  /* Column so Enter-inserted <div>/<br> elements stack vertically instead
+     of becoming row flex items. Default align-items: stretch lets each line
+     fill the width so text-align:center can center within. */
+  flex-direction: column;
   justify-content: center;
   text-align: center;
   white-space: pre-wrap;
@@ -161,6 +217,13 @@
   line-height: 1.2;
   pointer-events: none;
   overflow: hidden;
+}
+
+/* While editing AND overflowing, top-align so scrollTop=0 actually shows
+   the first line — centered justification offsets content above the scroll
+   origin and clips the top half. */
+.cb-sticky__text--overflowing {
+  justify-content: flex-start;
 }
 
 /* Empty hint */
@@ -176,12 +239,9 @@
   padding-inline: 16px;
 }
 
-/* Toolbar */
-.cb-toolbar {
-  position: absolute;
-  inset-block-end: 16px;
-  inset-inline-start: 50%;
-  transform: translateX(-50%);
+/* Shared surface styling for the bottom toolbar and the per-shape context menu. */
+.cb-toolbar,
+.cb-context-menu {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -192,15 +252,28 @@
   box-shadow: var(--cb-shadow);
   user-select: none;
   pointer-events: auto;
+}
+
+/* Bottom toolbar — tool picker, anchored bottom-center of the viewport. */
+.cb-toolbar {
+  position: absolute;
+  inset-block-end: 16px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
   max-width: calc(100% - 32px);
+  z-index: 3;
 }
 .cb-root[dir='rtl'] .cb-toolbar {
   transform: translateX(50%);
 }
 
-.cb-toolbar__group {
-  display: inline-flex;
-  gap: 2px;
+/* Floating context menu — anchored under the selected shape; left/top come
+   from worldToScreen, translateX(-50%) centers horizontally. */
+.cb-context-menu {
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 3;
+  white-space: nowrap;
 }
 
 .cb-toolbar__divider {

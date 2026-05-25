@@ -30,6 +30,14 @@ export function usePanZoom({ viewportRef, camera, setCamera }: Options) {
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
+      // If the wheel is over an editing contenteditable that can scroll,
+      // let the browser scroll its content instead of panning the canvas.
+      const target = e.target as Element | null;
+      const editable = target?.closest?.('[contenteditable="true"]') as HTMLElement | null;
+      if (editable && editable.scrollHeight > editable.clientHeight + 1) {
+        return;
+      }
+
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const rect = el.getBoundingClientRect();

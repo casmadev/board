@@ -16,6 +16,7 @@ export {
 export { defaultMessages, mergeMessages } from './i18n';
 export type { Messages } from './i18n';
 export type {
+  BackgroundStyle,
   CasmaBoardProps,
   Camera,
   Direction,

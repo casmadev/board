@@ -1,6 +1,11 @@
 import { useMemo, useState } from 'react';
 import { CasmaBoard } from '@casmadev/board';
-import type { Direction, Messages, TextOverflow } from '@casmadev/board';
+import type {
+  BackgroundStyle,
+  Direction,
+  Messages,
+  TextOverflow,
+} from '@casmadev/board';
 import {
   en,
   es,
@@ -21,6 +26,8 @@ export default function App() {
   const [direction, setDirection] = useState<Direction>('ltr');
   const [textOverflow, setTextOverflow] = useState<TextOverflow>('shrink-to-fit');
   const [depth3d, setDepth3d] = useState(800);
+  const [background, setBackground] = useState<BackgroundStyle>('dots');
+  const [snapToGrid, setSnapToGrid] = useState(false);
 
   const messages = useMemo(() => LOCALES[locale], [locale]);
 
@@ -75,6 +82,25 @@ export default function App() {
             <option value="truncate">truncate</option>
           </select>
         </label>
+        <label>
+          Background:&nbsp;
+          <select
+            value={background}
+            onChange={(e) => setBackground(e.target.value as BackgroundStyle)}
+          >
+            <option value="dots">dots</option>
+            <option value="grid">grid</option>
+            <option value="none">none</option>
+          </select>
+        </label>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <input
+            type="checkbox"
+            checked={snapToGrid}
+            onChange={(e) => setSnapToGrid(e.target.checked)}
+          />
+          Snap to grid
+        </label>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           3D depth:&nbsp;
           <input
@@ -100,6 +126,8 @@ export default function App() {
           direction={direction}
           textOverflow={textOverflow}
           depth3d={depth3d}
+          background={background}
+          snapToGrid={snapToGrid}
         />
       </div>
     </div>

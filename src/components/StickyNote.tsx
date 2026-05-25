@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { StickyShape, TextOverflow } from '../types';
 import type { Messages } from '../i18n';
 import { fitText, truncateToFit } from '../geometry/fitText';
@@ -30,6 +30,62 @@ interface Props {
   onCancelEdit: () => void;
 }
 
+const BLOCK_TAGS = /^(DIV|P|H[1-6]|UL|OL|LI|BLOCKQUOTE|PRE|SECTION|ARTICLE)$/;
+
+/**
+ * Read the visible text of a contentEditable, preserving line breaks the
+ * user inserted with Enter.
+ *
+ * `textContent` flattens `<div>` boundaries; `innerText` doubles them up
+ * because an empty line in Chrome is `<div><br></div>` and innerText counts
+ * BOTH the block boundary AND the inner `<br>`. We do our own walk: each
+ * `<br>` is exactly one newline, each block adds at most one newline before
+ * and one after, and consecutive newlines never collapse together unless the
+ * user actually intended them.
+ */
+function readEditableText(el: HTMLElement): string {
+  let out = '';
+  // Treat the start of the buffer as "already past a newline" so a leading
+  // block doesn't add a stray prefix newline.
+  let lastWasNewline = true;
+
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent ?? '';
+      if (text) {
+        out += text;
+        lastWasNewline = text.endsWith('\n');
+      }
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const e = node as HTMLElement;
+    if (e.tagName === 'BR') {
+      out += '\n';
+      lastWasNewline = true;
+      return;
+    }
+    if (BLOCK_TAGS.test(e.tagName)) {
+      if (out && !lastWasNewline) {
+        out += '\n';
+        lastWasNewline = true;
+      }
+      e.childNodes.forEach(walk);
+      if (!lastWasNewline) {
+        out += '\n';
+        lastWasNewline = true;
+      }
+      return;
+    }
+    e.childNodes.forEach(walk);
+  };
+
+  el.childNodes.forEach(walk);
+
+  // Trailing newline is usually the filler <br> Chrome inserts; drop one.
+  return out.endsWith('\n') ? out.slice(0, -1) : out;
+}
+
 // Deterministic 32-bit FNV-1a hash for stable per-sticky randomization.
 function hashId(id: string, salt: number): number {
   let h = 2166136261;
@@ -59,6 +115,21 @@ export function StickyNote({
   const draftRef = useRef<string>(shape.text);
   const settledRef = useRef(false);
   const dirtyRef = useRef(false);
+
+  // Custom scrollbar metrics. Native scrollbars are unreliable across OSes
+  // (macOS hides overlay bars until interaction); rendering our own gives a
+  // consistent always-on affordance while editing.
+  const [scrollMetrics, setScrollMetrics] = useState({
+    overflow: false,
+    thumbPct: 1,
+    posPct: 0,
+  });
+  const thumbDragRef = useRef<{
+    startY: number;
+    startScrollTop: number;
+    ratio: number;
+    maxScrollTop: number;
+  } | null>(null);
 
   // Render text (display mode) and run shrink/truncate fit.
   useLayoutEffect(() => {
@@ -114,6 +185,35 @@ export function StickyNote({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
+  // Track scroll metrics while editing so the custom scrollbar can size
+  // and position its thumb.
+  useEffect(() => {
+    if (!editing) {
+      setScrollMetrics({ overflow: false, thumbPct: 1, posPct: 0 });
+      return;
+    }
+    const el = textRef.current;
+    if (!el) return;
+    const measure = () => {
+      const sh = el.scrollHeight;
+      const ch = el.clientHeight;
+      const overflow = sh > ch + 1;
+      const thumbPct = overflow ? ch / sh : 1;
+      const posPct = overflow ? el.scrollTop / (sh - ch) : 0;
+      setScrollMetrics({ overflow, thumbPct, posPct });
+    };
+    measure();
+    el.addEventListener('scroll', measure);
+    el.addEventListener('input', measure);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', measure);
+      el.removeEventListener('input', measure);
+      ro.disconnect();
+    };
+  }, [editing, shape.id, shape.w, shape.h]);
+
   const zRotDeg = useMemo(() => {
     const h = hashId(shape.id, editVersion);
     const t = (h & 0xff) / 0xff;
@@ -161,9 +261,62 @@ export function StickyNote({
       onDoubleClick={editing ? undefined : onDoubleClick}
       {...handlers}
     >
+      {editing && scrollMetrics.overflow && (
+        <div className="cb-sticky__scrollbar" aria-hidden>
+          <div
+            className="cb-sticky__scrollthumb"
+            style={{
+              height: `${scrollMetrics.thumbPct * 100}%`,
+              top: `${scrollMetrics.posPct * (1 - scrollMetrics.thumbPct) * 100}%`,
+            }}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              e.preventDefault();
+              e.stopPropagation();
+              const text = textRef.current;
+              const thumb = e.currentTarget;
+              const bar = thumb.parentElement;
+              if (!text || !bar) return;
+              const trackH = bar.getBoundingClientRect().height;
+              const thumbH = thumb.getBoundingClientRect().height;
+              const maxThumbOffset = Math.max(1, trackH - thumbH);
+              const maxScrollTop = Math.max(1, text.scrollHeight - text.clientHeight);
+              thumbDragRef.current = {
+                startY: e.clientY,
+                startScrollTop: text.scrollTop,
+                ratio: maxScrollTop / maxThumbOffset,
+                maxScrollTop,
+              };
+              thumb.setPointerCapture(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              const drag = thumbDragRef.current;
+              const text = textRef.current;
+              if (!drag || !text) return;
+              const dy = e.clientY - drag.startY;
+              text.scrollTop = Math.max(
+                0,
+                Math.min(drag.maxScrollTop, drag.startScrollTop + dy * drag.ratio),
+              );
+            }}
+            onPointerUp={(e) => {
+              if (!thumbDragRef.current) return;
+              thumbDragRef.current = null;
+              try {
+                e.currentTarget.releasePointerCapture(e.pointerId);
+              } catch {
+                /* noop */
+              }
+            }}
+            onPointerCancel={() => {
+              thumbDragRef.current = null;
+            }}
+          />
+        </div>
+      )}
       <div
         ref={textRef}
-        className="cb-sticky__text"
+        className={`cb-sticky__text${editing && scrollMetrics.overflow ? ' cb-sticky__text--overflowing' : ''}`}
         contentEditable={editing}
         suppressContentEditableWarning
         spellCheck={editing ? false : undefined}
@@ -172,12 +325,11 @@ export function StickyNote({
         onInput={
           editing
             ? (e) => {
-                const el = e.currentTarget;
-                draftRef.current = el.textContent ?? '';
+                draftRef.current = readEditableText(e.currentTarget);
                 dirtyRef.current = true;
-                if (textOverflow === 'shrink-to-fit') {
-                  fitText(el, STICKY_FONT_MAX, STICKY_FONT_MIN);
-                }
+                // Stay at full font size while typing in either mode — the
+                // custom scrollbar handles overflow. Auto-shrink runs again
+                // on commit (display useLayoutEffect).
               }
             : undefined
         }

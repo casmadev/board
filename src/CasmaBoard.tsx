@@ -24,7 +24,8 @@ import { screenToWorld } from './geometry/camera';
 import { World } from './components/World';
 import { StickyNote } from './components/StickyNote';
 import { Toolbar } from './components/Toolbar';
-import { DEFAULT_DEPTH_3D } from './constants';
+import { ShapeContextMenu } from './components/ShapeContextMenu';
+import { DEFAULT_DEPTH_3D, GRID_SIZE } from './constants';
 
 const fallbackId = (() => {
   let n = 0;
@@ -53,8 +54,15 @@ export function CasmaBoard(props: CasmaBoardProps) {
     style,
     textOverflow = 'shrink-to-fit',
     depth3d = DEFAULT_DEPTH_3D,
+    background = 'dots',
+    snapToGrid = false,
     generateId = defaultIdGen,
   } = props;
+
+  const snap = useCallback(
+    (n: number) => (snapToGrid ? Math.round(n / GRID_SIZE) * GRID_SIZE : n),
+    [snapToGrid],
+  );
 
   const [shapesState, setShapesState] = useShapes(
     shapesProp,
@@ -97,7 +105,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
     cameraRef,
     onSelect: select,
     onMove: (id, x, y) =>
-      setShapesState((s) => updateShape(s, id, { x, y })),
+      setShapesState((s) => updateShape(s, id, { x: snap(x), y: snap(y) })),
   });
 
   // Click on empty viewport: create sticky (sticky tool) or deselect.
@@ -119,6 +127,10 @@ export function CasmaBoard(props: CasmaBoardProps) {
 
       if (tool === 'sticky') {
         const sticky = createStickyShape(generateId(), world.x, world.y);
+        if (snapToGrid) {
+          sticky.x = snap(sticky.x);
+          sticky.y = snap(sticky.y);
+        }
         setShapesState((s) => addShape(s, sticky));
         select(sticky.id);
         setTool('select');
@@ -127,7 +139,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
         endEdit(editingId);
       }
     },
-    [panZoom, tool, generateId, setShapesState, select, endEdit, editingId],
+    [panZoom, tool, generateId, setShapesState, select, endEdit, editingId, snap, snapToGrid],
   );
 
   // Keyboard: delete selected shape, escape to deselect / leave edit.
@@ -195,8 +207,16 @@ export function CasmaBoard(props: CasmaBoardProps) {
     >
       <div
         ref={viewportRef}
-        className="cb-viewport"
-        style={depth3d > 0 ? { perspective: `${depth3d}px` } : undefined}
+        className={`cb-viewport cb-viewport--bg-${background}`}
+        style={{
+          ...(depth3d > 0 ? { perspective: `${depth3d}px` } : null),
+          ...(background !== 'none'
+            ? {
+                backgroundSize: `${GRID_SIZE * camera.zoom}px ${GRID_SIZE * camera.zoom}px`,
+                backgroundPosition: `${camera.x}px ${camera.y}px`,
+              }
+            : null),
+        }}
         onPointerDown={handleViewportPointerDown}
         onPointerMove={panZoom.onPointerMove}
         onPointerUp={panZoom.onPointerUp}
@@ -225,21 +245,23 @@ export function CasmaBoard(props: CasmaBoardProps) {
           })}
         </World>
 
+        {!hideUI && selectedSticky && editingId !== selectedSticky.id && (
+          <ShapeContextMenu
+            shape={selectedSticky}
+            camera={camera}
+            messages={messages}
+            onColorChange={handleColorChange}
+            onDelete={handleDelete}
+          />
+        )}
+
         {ordered.length === 0 && (
           <div className="cb-empty-hint">{messages.hints.emptyCanvas}</div>
         )}
       </div>
 
       {!hideUI && (
-        <Toolbar
-          messages={messages}
-          tool={tool}
-          onToolChange={setTool}
-          selectedColor={selectedSticky?.color}
-          onSelectedColorChange={selectedSticky ? handleColorChange : undefined}
-          canDelete={Boolean(selectedId)}
-          onDelete={handleDelete}
-        />
+        <Toolbar messages={messages} tool={tool} onToolChange={setTool} />
       )}
     </div>
   );
