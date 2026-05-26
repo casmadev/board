@@ -1,0 +1,23 @@
+/* BMC-specific styling. Loaded only when BmcDemo mounts (it imports this
+   file at the top), so the rules don't leak into other demos. Everything
+   lives under .bmc-board, the className the demo applies to its
+   <CasmaBoard>. */
+
+/* Sticky note position transition. The package leaves `left`/`top` un-
+   transitioned because most boards want pointer-precise drag. In BMC the
+   sticky can jump several hundred world-pixels in a single frame when the
+   user crosses an inner region border (the clamp re-detects the
+   containing region and snaps the body inside it) — without smoothing
+   that reads as a hard jitter. A short transition softens the snap into
+   a glide while keeping the sticky close enough to the cursor that drag
+   feels responsive.
+
+   Composed inline with the transform/box-shadow rules the package already
+   applies, so sticky tilt + selection ring still animate. */
+.bmc-board .cb-sticky {
+  transition:
+    left 110ms cubic-bezier(0.2, 0.85, 0.3, 1),
+    top 110ms cubic-bezier(0.2, 0.85, 0.3, 1),
+    transform 380ms cubic-bezier(0.2, 0.85, 0.3, 1.05),
+    box-shadow 240ms ease-out;
+}

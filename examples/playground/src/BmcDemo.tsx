@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect } from 'react';
 import { CasmaBoard, stickyKind, useCasmaBoard } from '@casmadev/board';
 import type {
   Shape,
@@ -8,6 +8,7 @@ import type {
 } from '@casmadev/board';
 import { DemoNav } from './DemoNav';
 import { StickyFanToolbar } from './StickyFanToolbar';
+import './bmc.css';
 
 /* ------------------------------------------------------------------ */
 /* Custom shape kind: a Business Model Canvas region. Rendered as a   */
@@ -121,9 +122,83 @@ const REGIONS: RegionSpec[] = [
   { id: 'bmc-revenue-streams',       title: 'Revenue Streams',       col: 2.5, row: 2, cols: 2.5, rows: 1 },
 ];
 
+/* ------------------------------------------------------------------ */
+/* Local storage persistence — saves the user's stickies (everything   */
+/* except the code-defined BMC regions) so they survive a reload. A   */
+/* version suffix on the key lets us bump it later without trying to  */
+/* read incompatible old payloads.                                     */
+/* ------------------------------------------------------------------ */
+
+const STORAGE_KEY = 'casma:bmc:v1';
+
+interface PersistedShapes {
+  shapes: Record<string, Shape>;
+  order: string[];
+}
+
+function loadPersisted(): PersistedShapes {
+  // SSR / private-mode guards: localStorage may be undefined or throw on
+  // access. Empty + corrupt + missing all collapse to "no saved data".
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return { shapes: {}, order: [] };
+  }
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { shapes: {}, order: [] };
+    const parsed = JSON.parse(raw) as Partial<PersistedShapes>;
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      !parsed.shapes ||
+      !Array.isArray(parsed.order)
+    ) {
+      return { shapes: {}, order: [] };
+    }
+    return { shapes: parsed.shapes, order: parsed.order };
+  } catch {
+    return { shapes: {}, order: [] };
+  }
+}
+
+// Debounced write — onShapesChange fires on every patch (and drag emits
+// many per second). Saving on every frame would beat up localStorage and
+// the JSON serializer for no benefit. 400ms catches a settled state.
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function queueSave(state: ShapesState) {
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => savePersisted(state), 400);
+}
+
+function savePersisted(state: ShapesState) {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  // Filter to user shapes — the BMC regions are deterministic seeds
+  // rebuilt from REGIONS on every mount; persisting them would couple us
+  // to that snapshot and re-restore stale geometry if the layout changes.
+  const userShapes: Record<string, Shape> = {};
+  const userOrder: string[] = [];
+  for (const id of state.order) {
+    const s = state.shapes[id];
+    if (s && s.type !== 'bmc-region') {
+      userShapes[id] = s;
+      userOrder.push(id);
+    }
+  }
+  const payload: PersistedShapes = { shapes: userShapes, order: userOrder };
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Quota / serialization error — silently drop. The runtime state is
+    // still consistent; the user just won't have their stickies after a
+    // reload. Logging is intentionally avoided so the playground doesn't
+    // spam consoles in restricted browser modes.
+  }
+}
+
 const initialShapes: ShapesState = (() => {
   const shapes: Record<string, Shape> = {};
   const order: string[] = [];
+  // BMC regions render first (so user-added stickies appear on top of
+  // them in DOM order → z-index doesn't have to compensate).
   for (const r of REGIONS) {
     const region: BmcRegion = {
       id: r.id,
@@ -138,15 +213,33 @@ const initialShapes: ShapesState = (() => {
     shapes[r.id] = region;
     order.push(r.id);
   }
+  // Layer persisted stickies on top, preserving their original order.
+  // We skip anything that conflicts with a BMC region id so a corrupted
+  // save can't replace the regions.
+  const persisted = loadPersisted();
+  for (const id of persisted.order) {
+    if (shapes[id]) continue;
+    const s = persisted.shapes[id];
+    if (!s) continue;
+    shapes[id] = s;
+    order.push(id);
+  }
   return { shapes, order };
 })();
 
 /* ------------------------------------------------------------------ */
-/* Region clamping — when a sticky enters a drag we record which       */
-/* region holds its center; from that moment until the next drag       */
-/* starts, every onShapeDragMove/End clamps the sticky inside *that*   */
-/* region. Fast cross-region drags can't teleport the sticky into a    */
-/* neighbour — it just stops at the border it started behind.          */
+/* Region clamping — runs only at drag-end and at spawn time. The      */
+/* sticky moves with the cursor unconstrained during the drag itself,  */
+/* which keeps the dragged feedback crisp; the snap into a region (or  */
+/* out to the canvas) happens once on release, and the CSS transition  */
+/* in bmc.css glides the sticky into its final spot.                   */
+/*                                                                     */
+/* Two rules cover the layout:                                         */
+/* 1. Sticky's center lands inside a region — clamp the body inside    */
+/*    that region (snap inwards). Handles inner borders.               */
+/* 2. Sticky's center lands outside every region but the body still    */
+/*    overlaps the BMC rectangle — push the body fully out to the      */
+/*    blank canvas (snap outwards). Handles outer borders.             */
 /* ------------------------------------------------------------------ */
 
 const REGION_BOXES = REGIONS.map((r) => ({
@@ -160,6 +253,12 @@ const REGION_BOXES = REGIONS.map((r) => ({
 type RegionBox = (typeof REGION_BOXES)[number];
 
 const CLAMP_INSET = 6; // px gap kept between sticky edge and region border
+
+// BMC outer rectangle. Used by the outward-clamp path: if the sticky's
+// center is outside every region (i.e. it landed in the blank canvas)
+// but its body still overlaps this rectangle, we push the body fully
+// out so the sticky never half-rides over an outer region border.
+const BMC_BOUNDS = { x: 0, y: 0, w: BMC_WIDTH, h: BMC_HEIGHT };
 
 function regionContaining(shape: Shape): RegionBox | null {
   const cx = shape.x + shape.w / 2;
@@ -176,13 +275,69 @@ function clampToRegion(shape: Shape, region: RegionBox): Partial<Shape> | void {
   const maxX = region.x + region.w - shape.w - CLAMP_INSET;
   const minY = region.y + CLAMP_INSET;
   const maxY = region.y + region.h - shape.h - CLAMP_INSET;
-  // Returning nothing when already in bounds keeps the dragged frame from
-  // triggering needless override churn — the proposed shape commits
-  // unmodified and React skips re-renders for unchanged state.
+  // Returning nothing when already in bounds means no patch — and React
+  // skips the re-render for an unchanged state. Important at drag-end so
+  // a sticky that's already cleanly placed doesn't kick off a no-op
+  // update + transition.
   const clampedX = Math.min(Math.max(shape.x, minX), maxX);
   const clampedY = Math.min(Math.max(shape.y, minY), maxY);
   if (clampedX === shape.x && clampedY === shape.y) return;
   return { x: clampedX, y: clampedY };
+}
+
+/** Outward clamp: the sticky's center is outside every region, but its
+ *  body still overlaps the BMC rectangle. Push the body fully out to the
+ *  canvas in whichever direction the center is already heading.
+ *
+ *  We resolve corners (center is past two edges of the BMC, e.g. above
+ *  *and* left) by picking the shorter of the two pushes — the sticky
+ *  lands closer to where the user dropped it, which usually matches
+ *  their intent.
+ *
+ *  Returns `undefined` when no push is needed: either the body is
+ *  already entirely outside the BMC, or the sticky is so deep into the
+ *  outside that no edge of the BMC rectangle clips its body. */
+function clampOutsideBMC(shape: Shape): Partial<Shape> | void {
+  const b = BMC_BOUNDS;
+  // Body-vs-BMC intersection test. If the body doesn't overlap the BMC
+  // rectangle at all, the sticky is free on the canvas — no clamp.
+  const overlaps =
+    shape.x < b.x + b.w &&
+    shape.x + shape.w > b.x &&
+    shape.y < b.y + b.h &&
+    shape.y + shape.h > b.y;
+  if (!overlaps) return;
+
+  const cx = shape.x + shape.w / 2;
+  const cy = shape.y + shape.h / 2;
+  // For each axis, "are we crossing OUT on the left or the right?"
+  // Compute the candidate target x/y when pushed past that edge.
+  // distance is the absolute world-pixel push required; we pick the
+  // axis with the smaller push so the sticky lands close to where the
+  // user released.
+  const candidates: Array<{ axis: 'x' | 'y'; value: number; distance: number }> = [];
+  if (cx < b.x) {
+    const value = b.x - shape.w - CLAMP_INSET;
+    candidates.push({ axis: 'x', value, distance: Math.abs(value - shape.x) });
+  } else if (cx >= b.x + b.w) {
+    const value = b.x + b.w + CLAMP_INSET;
+    candidates.push({ axis: 'x', value, distance: Math.abs(value - shape.x) });
+  }
+  if (cy < b.y) {
+    const value = b.y - shape.h - CLAMP_INSET;
+    candidates.push({ axis: 'y', value, distance: Math.abs(value - shape.y) });
+  } else if (cy >= b.y + b.h) {
+    const value = b.y + b.h + CLAMP_INSET;
+    candidates.push({ axis: 'y', value, distance: Math.abs(value - shape.y) });
+  }
+  if (candidates.length === 0) return; // shouldn't happen — body overlaps but
+                                       // center is "inside" both axes? Means
+                                       // center is in a region and the
+                                       // regionContaining check above would
+                                       // have caught it.
+  candidates.sort((a, b) => a.distance - b.distance);
+  const pick = candidates[0]!;
+  return pick.axis === 'x' ? { x: pick.value } : { y: pick.value };
 }
 
 /* ------------------------------------------------------------------ */
@@ -230,41 +385,96 @@ function AutoCenterCanvas({
 /* BmcDemo                                                            */
 /* ------------------------------------------------------------------ */
 
-export default function BmcDemo() {
-  // Per-drag region lock. Captured at drag-start, cleared at drag-end. The
-  // ref pattern keeps this state outside React so callbacks can stay
-  // referentially stable (they read latest via `.current`).
-  const dragRegionRef = useRef<RegionBox | null>(null);
+// Two-rule clamp: inward when the center lands in a region, outward when
+// it lands on the canvas with the body still over the BMC. Used at spawn
+// and at drag-end only — never during drag-move, so the sticky tracks
+// the cursor without any constraint mid-gesture.
+function clampShape(shape: Shape): Partial<Shape> | void {
+  const region = regionContaining(shape);
+  if (region) return clampToRegion(shape, region);
+  return clampOutsideBMC(shape);
+}
+
+/* ------------------------------------------------------------------ */
+/* Top-right control panel: shows a short blurb about the persistence */
+/* contract and a Clear-All action that wipes user stickies without   */
+/* touching the BMC regions. The button confirm()s first since this   */
+/* is irrecoverable from inside the demo.                              */
+/* ------------------------------------------------------------------ */
+
+function BmcControlPanel() {
+  const { setShapes, shapes } = useCasmaBoard();
+  // Count user stickies (everything except BMC regions) so the button
+  // can disable itself when there's nothing to clear.
+  const userCount = shapes.order.filter(
+    (id) => shapes.shapes[id]?.type !== 'bmc-region',
+  ).length;
+
+  const clearAll = () => {
+    if (userCount === 0) return;
+    const plural = userCount === 1 ? 'sticky note' : 'sticky notes';
+    if (!window.confirm(`Remove ${userCount} ${plural}?`)) return;
+    setShapes((s) => {
+      const nextShapes: Record<string, Shape> = {};
+      const nextOrder: string[] = [];
+      for (const id of s.order) {
+        const sh = s.shapes[id];
+        if (sh && sh.type === 'bmc-region') {
+          nextShapes[id] = sh;
+          nextOrder.push(id);
+        }
+      }
+      return { shapes: nextShapes, order: nextOrder };
+    });
+  };
 
   return (
+    <button
+      type="button"
+      onClick={clearAll}
+      disabled={userCount === 0}
+      style={{
+        appearance: 'none',
+        border: '1px solid rgba(0,0,0,0.1)',
+        background: userCount === 0 ? '#f3f4f6' : '#fff',
+        color: userCount === 0 ? 'rgba(0,0,0,0.35)' : '#b91c1c',
+        fontSize: 12,
+        fontWeight: 600,
+        padding: '8px 14px',
+        borderRadius: 8,
+        cursor: userCount === 0 ? 'not-allowed' : 'pointer',
+        boxShadow: '0 4px 10px rgba(0,0,0,0.06)',
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      }}
+    >
+      Clear all
+    </button>
+  );
+}
+
+export default function BmcDemo() {
+  return (
     <CasmaBoard
+      // .bmc-board scopes the position transition in bmc.css. It lives on
+      // .cb-root so the rule can target descendant .cb-sticky elements
+      // without bleeding into other demos.
+      className="bmc-board"
       background="none"
       // bmcRegionKind first so regions render below user-added stickies
       // (each new shape is appended to `order` and renders last → on top).
       shapeKinds={[bmcRegionKind, stickyKind]}
       defaultShapes={initialShapes}
-      // On drag-start, lock the sticky to the region it lives in. BMC
-      // regions themselves are disabled (no drag), so this callback only
-      // ever fires for stickies.
-      onShapeDragStart={(shape) => {
-        dragRegionRef.current = regionContaining(shape);
-      }}
-      // Inline clamp: the override is folded into the same setShapesState
-      // as the original drag patch, so the user never sees the sticky
-      // momentarily outside its region. If the sticky was spawned in the
-      // gutter (no containing region), we fall back to "any region" —
-      // catching the sticky at the nearest border instead of free-flying.
-      onShapeDragMove={(shape) => {
-        const region = dragRegionRef.current ?? regionContaining(shape);
-        if (!region) return;
-        return clampToRegion(shape, region);
-      }}
-      onShapeDragEnd={(shape) => {
-        const region = dragRegionRef.current ?? regionContaining(shape);
-        dragRegionRef.current = null;
-        if (!region) return;
-        return clampToRegion(shape, region);
-      }}
+      // Debounced save on every shape change. The save filters out the
+      // BMC regions internally so the persisted payload is just the user
+      // stickies.
+      onShapesChange={queueSave}
+      // Clamp only at the discrete moments the user finalizes a position:
+      // spawning a sticky and releasing a drag. Mid-drag stays free, so
+      // the sticky tracks the cursor 1:1 across borders. The CSS
+      // transition in bmc.css smooths the single jump on release.
+      onShapeAdd={clampShape}
+      onShapeDragEnd={clampShape}
       slots={{
         topLeft: (
           <>
@@ -272,6 +482,7 @@ export default function BmcDemo() {
             <AutoCenterCanvas width={BMC_WIDTH} height={BMC_HEIGHT} />
           </>
         ),
+        topRight: <BmcControlPanel />,
         bottomCenter: <StickyFanToolbar />,
         // bottomRight omitted → DefaultZoomWidget.
       }}
