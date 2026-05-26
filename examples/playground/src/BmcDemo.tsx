@@ -1,4 +1,4 @@
-import { useLayoutEffect } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { CasmaBoard, stickyKind, useCasmaBoard } from '@casmadev/board';
 import type {
   Shape,
@@ -142,6 +142,50 @@ const initialShapes: ShapesState = (() => {
 })();
 
 /* ------------------------------------------------------------------ */
+/* Region clamping — when a sticky enters a drag we record which       */
+/* region holds its center; from that moment until the next drag       */
+/* starts, every onShapeDragMove/End clamps the sticky inside *that*   */
+/* region. Fast cross-region drags can't teleport the sticky into a    */
+/* neighbour — it just stops at the border it started behind.          */
+/* ------------------------------------------------------------------ */
+
+const REGION_BOXES = REGIONS.map((r) => ({
+  id: r.id,
+  x: r.col * COL,
+  y: r.row * ROW,
+  w: r.cols * COL,
+  h: r.rows * ROW,
+}));
+
+type RegionBox = (typeof REGION_BOXES)[number];
+
+const CLAMP_INSET = 6; // px gap kept between sticky edge and region border
+
+function regionContaining(shape: Shape): RegionBox | null {
+  const cx = shape.x + shape.w / 2;
+  const cy = shape.y + shape.h / 2;
+  return (
+    REGION_BOXES.find(
+      (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+    ) ?? null
+  );
+}
+
+function clampToRegion(shape: Shape, region: RegionBox): Partial<Shape> | void {
+  const minX = region.x + CLAMP_INSET;
+  const maxX = region.x + region.w - shape.w - CLAMP_INSET;
+  const minY = region.y + CLAMP_INSET;
+  const maxY = region.y + region.h - shape.h - CLAMP_INSET;
+  // Returning nothing when already in bounds keeps the dragged frame from
+  // triggering needless override churn — the proposed shape commits
+  // unmodified and React skips re-renders for unchanged state.
+  const clampedX = Math.min(Math.max(shape.x, minX), maxX);
+  const clampedY = Math.min(Math.max(shape.y, minY), maxY);
+  if (clampedX === shape.x && clampedY === shape.y) return;
+  return { x: clampedX, y: clampedY };
+}
+
+/* ------------------------------------------------------------------ */
 /* AutoCenterCanvas — invisible helper that measures the viewport on  */
 /* mount and centers + fits a region of world-coordinate `width`×     */
 /* `height` inside it. Avoids hard-coding a `defaultCamera` that      */
@@ -187,6 +231,11 @@ function AutoCenterCanvas({
 /* ------------------------------------------------------------------ */
 
 export default function BmcDemo() {
+  // Per-drag region lock. Captured at drag-start, cleared at drag-end. The
+  // ref pattern keeps this state outside React so callbacks can stay
+  // referentially stable (they read latest via `.current`).
+  const dragRegionRef = useRef<RegionBox | null>(null);
+
   return (
     <CasmaBoard
       background="none"
@@ -194,6 +243,28 @@ export default function BmcDemo() {
       // (each new shape is appended to `order` and renders last → on top).
       shapeKinds={[bmcRegionKind, stickyKind]}
       defaultShapes={initialShapes}
+      // On drag-start, lock the sticky to the region it lives in. BMC
+      // regions themselves are disabled (no drag), so this callback only
+      // ever fires for stickies.
+      onShapeDragStart={(shape) => {
+        dragRegionRef.current = regionContaining(shape);
+      }}
+      // Inline clamp: the override is folded into the same setShapesState
+      // as the original drag patch, so the user never sees the sticky
+      // momentarily outside its region. If the sticky was spawned in the
+      // gutter (no containing region), we fall back to "any region" —
+      // catching the sticky at the nearest border instead of free-flying.
+      onShapeDragMove={(shape) => {
+        const region = dragRegionRef.current ?? regionContaining(shape);
+        if (!region) return;
+        return clampToRegion(shape, region);
+      }}
+      onShapeDragEnd={(shape) => {
+        const region = dragRegionRef.current ?? regionContaining(shape);
+        dragRegionRef.current = null;
+        if (!region) return;
+        return clampToRegion(shape, region);
+      }}
       slots={{
         topLeft: (
           <>

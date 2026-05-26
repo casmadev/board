@@ -3,6 +3,7 @@ import './fan-toolbar.css';
 import MainDemo from './MainDemo';
 import DisabledShapesDemo from './DisabledShapesDemo';
 import BmcDemo from './BmcDemo';
+import CallbacksDemo from './CallbacksDemo';
 import { useDemoRoute } from './DemoNav';
 
 /**
@@ -19,6 +20,8 @@ export default function App() {
         <DisabledShapesDemo />
       ) : route.hash === '#/bmc' ? (
         <BmcDemo />
+      ) : route.hash === '#/callbacks' ? (
+        <CallbacksDemo />
       ) : (
         <MainDemo />
       )}

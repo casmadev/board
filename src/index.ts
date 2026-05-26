@@ -63,6 +63,8 @@ export type {
   Direction,
   PointerHandlers,
   Shape,
+  ShapeCallbacks,
+  ShapeMutationReturn,
   ShapeKind,
   ShapeKindToolButton,
   ShapeRenderProps,

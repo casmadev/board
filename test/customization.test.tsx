@@ -739,4 +739,331 @@ describe('CasmaBoard customization', () => {
       errSpy.mockRestore();
     });
   });
+
+  describe('shape lifecycle callbacks', () => {
+    const aSticky: StickyShape = {
+      id: 'a',
+      type: 'sticky',
+      x: 0,
+      y: 0,
+      w: 192,
+      h: 192,
+      text: 'hi',
+      color: 'yellow',
+    };
+    const bSticky: StickyShape = { ...aSticky, id: 'b', x: 300 };
+
+    it('fires onShapeAdd when a shape is created via the toolbar tap', async () => {
+      const onShapeAdd = vi.fn();
+      render(<CasmaBoard onShapeAdd={onShapeAdd} />);
+      const vp = document.querySelector('.cb-viewport') as HTMLElement;
+      vp.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800,
+          x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      const toolBtn = screen.getByRole('button', { name: /sticky note/i });
+      const user = userEvent.setup();
+      // Tap toolbar (sets tool) then click viewport (spawns).
+      await user.click(toolBtn);
+      await user.pointer({
+        keys: '[MouseLeft>]',
+        target: vp,
+        coords: { x: 200, y: 200 },
+      });
+      await user.pointer({ keys: '[/MouseLeft]' });
+      expect(onShapeAdd).toHaveBeenCalledTimes(1);
+      expect(onShapeAdd.mock.calls[0]?.[0].type).toBe('sticky');
+    });
+
+    it('fires onShapeSelect / onShapeDeselect as selection changes', async () => {
+      const onShapeSelect = vi.fn();
+      const onShapeDeselect = vi.fn();
+      render(
+        <CasmaBoard
+          onShapeSelect={onShapeSelect}
+          onShapeDeselect={onShapeDeselect}
+          defaultShapes={{
+            shapes: { a: aSticky, b: bSticky },
+            order: ['a', 'b'],
+          }}
+        />,
+      );
+      const a = document.querySelector('[data-shape-id="a"]') as HTMLElement;
+      const b = document.querySelector('[data-shape-id="b"]') as HTMLElement;
+      const user = userEvent.setup();
+      // Select a — onShapeSelect(a) once, no deselect yet.
+      await user.pointer({ keys: '[MouseLeft>]', target: a });
+      await user.pointer({ keys: '[/MouseLeft]' });
+      expect(onShapeSelect).toHaveBeenCalledTimes(1);
+      expect(onShapeSelect.mock.calls[0]?.[0].id).toBe('a');
+      expect(onShapeDeselect).not.toHaveBeenCalled();
+      // Switch to b — onShapeDeselect(a) then onShapeSelect(b).
+      await user.pointer({ keys: '[MouseLeft>]', target: b });
+      await user.pointer({ keys: '[/MouseLeft]' });
+      expect(onShapeDeselect).toHaveBeenCalledTimes(1);
+      expect(onShapeDeselect.mock.calls[0]?.[0].id).toBe('a');
+      expect(onShapeSelect).toHaveBeenCalledTimes(2);
+      expect(onShapeSelect.mock.calls[1]?.[0].id).toBe('b');
+    });
+
+    it('does not fire onShapeDeselect when the selected shape is removed', () => {
+      const onShapeDeselect = vi.fn();
+      const onShapeRemove = vi.fn();
+      const Harness = () => {
+        const { removeShape, setSelectedId } = useCasmaBoard();
+        return (
+          <div>
+            <button onClick={() => setSelectedId('a')}>select</button>
+            <button onClick={() => removeShape('a')}>remove</button>
+          </div>
+        );
+      };
+      render(
+        <CasmaBoard
+          onShapeDeselect={onShapeDeselect}
+          onShapeRemove={onShapeRemove}
+          defaultShapes={{ shapes: { a: aSticky }, order: ['a'] }}
+          slots={{ topRight: <Harness /> }}
+        />,
+      );
+      const user = userEvent.setup();
+      // Programmatic select via context — has to be done before remove so
+      // there's a selection to clear.
+      act(() => {
+        screen.getByRole('button', { name: 'select' }).click();
+      });
+      expect(onShapeDeselect).not.toHaveBeenCalled();
+      act(() => {
+        screen.getByRole('button', { name: 'remove' }).click();
+      });
+      expect(onShapeRemove).toHaveBeenCalledTimes(1);
+      expect(onShapeRemove.mock.calls[0]?.[0].id).toBe('a');
+      // No deselect fired — the consumer correlates via onShapeRemove.
+      expect(onShapeDeselect).not.toHaveBeenCalled();
+    });
+
+    it('fires onShapePatch with the post-patch shape and the patch keys', () => {
+      const onShapePatch = vi.fn();
+      const Patcher = () => {
+        const { patchShape } = useCasmaBoard();
+        return (
+          <button onClick={() => patchShape('a', { x: 42 })}>nudge</button>
+        );
+      };
+      render(
+        <CasmaBoard
+          onShapePatch={onShapePatch}
+          defaultShapes={{ shapes: { a: aSticky }, order: ['a'] }}
+          slots={{ topRight: <Patcher /> }}
+        />,
+      );
+      act(() => {
+        screen.getByRole('button', { name: 'nudge' }).click();
+      });
+      expect(onShapePatch).toHaveBeenCalledTimes(1);
+      const [shape, patch] = onShapePatch.mock.calls[0]!;
+      expect(shape.x).toBe(42);
+      expect(patch).toEqual({ x: 42 });
+    });
+
+    it('fires onShapeEditStart / onShapeEditCommit on the sticky editing flow', async () => {
+      const onShapeEditStart = vi.fn();
+      const onShapeEditCommit = vi.fn();
+      render(
+        <CasmaBoard
+          onShapeEditStart={onShapeEditStart}
+          onShapeEditCommit={onShapeEditCommit}
+          defaultShapes={{ shapes: { a: aSticky }, order: ['a'] }}
+        />,
+      );
+      const sticky = document.querySelector(
+        '[data-shape-id="a"]',
+      ) as HTMLElement;
+      const user = userEvent.setup();
+      // Double-click → enter edit mode.
+      await user.dblClick(sticky);
+      expect(onShapeEditStart).toHaveBeenCalledTimes(1);
+      expect(onShapeEditStart.mock.calls[0]?.[0].id).toBe('a');
+      // Press Cmd+Enter inside the contenteditable → commit.
+      const editor = document.querySelector(
+        '[contenteditable="true"]',
+      ) as HTMLElement;
+      expect(editor).not.toBeNull();
+      editor.focus();
+      await user.keyboard('{Meta>}{Enter}{/Meta}');
+      expect(onShapeEditCommit).toHaveBeenCalledTimes(1);
+      expect(onShapeEditCommit.mock.calls[0]?.[0].id).toBe('a');
+    });
+
+    it('fires onShapeEditCancel when the user presses Escape inside the editor', async () => {
+      const onShapeEditCancel = vi.fn();
+      const onShapeEditCommit = vi.fn();
+      render(
+        <CasmaBoard
+          onShapeEditCancel={onShapeEditCancel}
+          onShapeEditCommit={onShapeEditCommit}
+          defaultShapes={{ shapes: { a: aSticky }, order: ['a'] }}
+        />,
+      );
+      const sticky = document.querySelector(
+        '[data-shape-id="a"]',
+      ) as HTMLElement;
+      const user = userEvent.setup();
+      await user.dblClick(sticky);
+      const editor = document.querySelector(
+        '[contenteditable="true"]',
+      ) as HTMLElement;
+      editor.focus();
+      await user.keyboard('{Escape}');
+      expect(onShapeEditCancel).toHaveBeenCalledTimes(1);
+      expect(onShapeEditCancel.mock.calls[0]?.[0].id).toBe('a');
+      expect(onShapeEditCommit).not.toHaveBeenCalled();
+    });
+
+    it('fires onShapeDragStart and onShapeDragEnd around a drag gesture', async () => {
+      const onShapeDragStart = vi.fn();
+      const onShapeDragEnd = vi.fn();
+      const onShapeDragMove = vi.fn();
+      render(
+        <CasmaBoard
+          onShapeDragStart={onShapeDragStart}
+          onShapeDragEnd={onShapeDragEnd}
+          onShapeDragMove={onShapeDragMove}
+          defaultShapes={{ shapes: { a: aSticky }, order: ['a'] }}
+        />,
+      );
+      const sticky = document.querySelector(
+        '[data-shape-id="a"]',
+      ) as HTMLElement;
+      const user = userEvent.setup();
+      // Sub-threshold gesture → no drag callbacks fire.
+      await user.pointer({ keys: '[MouseLeft>]', target: sticky });
+      await user.pointer({ coords: { x: 2, y: 2 } });
+      await user.pointer({ keys: '[/MouseLeft]' });
+      expect(onShapeDragStart).not.toHaveBeenCalled();
+      expect(onShapeDragEnd).not.toHaveBeenCalled();
+      // Real drag — crosses threshold.
+      await user.pointer({ keys: '[MouseLeft>]', target: sticky });
+      await user.pointer({ coords: { x: 50, y: 50 } });
+      expect(onShapeDragStart).toHaveBeenCalledTimes(1);
+      expect(onShapeDragStart.mock.calls[0]?.[0].id).toBe('a');
+      expect(onShapeDragMove.mock.calls.length).toBeGreaterThan(0);
+      await user.pointer({ keys: '[/MouseLeft]' });
+      expect(onShapeDragEnd).toHaveBeenCalledTimes(1);
+      expect(onShapeDragEnd.mock.calls[0]?.[0].id).toBe('a');
+    });
+  });
+
+  describe('shape mutation transforms', () => {
+    const aSticky: StickyShape = {
+      id: 'a',
+      type: 'sticky',
+      x: 0,
+      y: 0,
+      w: 192,
+      h: 192,
+      text: 'hi',
+      color: 'yellow',
+    };
+
+    it('onShapePatch override is committed instead of the proposed patch', () => {
+      // Consumer says: "any x patch should be clamped to <= 50". We feed
+      // patch {x: 200} and expect the stored shape to end up at x=50.
+      const Patcher = () => {
+        const { patchShape } = useCasmaBoard();
+        return (
+          <button onClick={() => patchShape('a', { x: 200 })}>nudge</button>
+        );
+      };
+      render(
+        <CasmaBoard
+          onShapePatch={(shape) => (shape.x > 50 ? { x: 50 } : undefined)}
+          defaultShapes={{ shapes: { a: aSticky }, order: ['a'] }}
+          slots={{ topRight: <Patcher /> }}
+        />,
+      );
+      act(() => {
+        screen.getByRole('button', { name: 'nudge' }).click();
+      });
+      const el = document.querySelector('[data-shape-id="a"]') as HTMLElement;
+      // The DOM should reflect the clamped x, not the raw 200.
+      expect(el.style.left).toBe('50px');
+    });
+
+    it('onShapeAdd override is folded into the shape before it lands in state', () => {
+      // Consumer says: "any new sticky lands disabled". Spawn one and verify
+      // the resulting DOM picks up the cb-shape--disabled class.
+      const onShapeAdd = vi.fn().mockReturnValue({ disabled: true });
+      render(
+        <CasmaBoard
+          onShapeAdd={onShapeAdd}
+          defaultShapes={{ shapes: {}, order: [] }}
+        />,
+      );
+      const vp = document.querySelector('.cb-viewport') as HTMLElement;
+      vp.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800,
+          x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      const toolBtn = screen.getByRole('button', { name: /sticky note/i });
+      // Use a single click — viewport click after tool selection spawns one
+      // sticky at the click position.
+      act(() => {
+        toolBtn.click();
+      });
+      const synth = (type: string) =>
+        new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          clientX: 400,
+          clientY: 400,
+        });
+      act(() => {
+        vp.dispatchEvent(synth('pointerdown'));
+        vp.dispatchEvent(synth('pointerup'));
+      });
+      expect(onShapeAdd).toHaveBeenCalledTimes(1);
+      const el = document.querySelector('[data-shape-id]') as HTMLElement;
+      expect(el).not.toBeNull();
+      // The disabled class is applied in the same render as the spawn.
+      expect(el.className).toContain('cb-shape--disabled');
+    });
+
+    it('onShapeDragMove override clamps the drag position to the returned coords', async () => {
+      // Consumer says: "clamp x to <= 20". Drag the sticky 80px to the
+      // right and expect the committed x to stay at 20.
+      render(
+        <CasmaBoard
+          onShapeDragMove={(shape) => (shape.x > 20 ? { x: 20 } : undefined)}
+          defaultShapes={{ shapes: { a: aSticky }, order: ['a'] }}
+        />,
+      );
+      const sticky = document.querySelector(
+        '[data-shape-id="a"]',
+      ) as HTMLElement;
+      const user = userEvent.setup();
+      await user.pointer({ keys: '[MouseLeft>]', target: sticky });
+      await user.pointer({ coords: { x: 80, y: 0 } });
+      await user.pointer({ keys: '[/MouseLeft]' });
+      // Clamped, not the 80 the cursor traveled.
+      expect(sticky.style.left).toBe('20px');
+    });
+
+    it('onShapeDragMove without override commits the proposed position', async () => {
+      // Sanity: if the callback returns nothing, the drag works normally.
+      render(
+        <CasmaBoard
+          onShapeDragMove={() => undefined}
+          defaultShapes={{ shapes: { a: aSticky }, order: ['a'] }}
+        />,
+      );
+      const sticky = document.querySelector(
+        '[data-shape-id="a"]',
+      ) as HTMLElement;
+      const user = userEvent.setup();
+      await user.pointer({ keys: '[MouseLeft>]', target: sticky });
+      await user.pointer({ coords: { x: 60, y: 0 } });
+      await user.pointer({ keys: '[/MouseLeft]' });
+      expect(sticky.style.left).toBe('60px');
+    });
+  });
 });

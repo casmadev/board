@@ -13,6 +13,7 @@ export const DEMO_ROUTES: DemoRoute[] = [
   { hash: '#/', label: 'Playground' },
   { hash: '#/disabled', label: 'Disabled shapes' },
   { hash: '#/bmc', label: 'BMC' },
+  { hash: '#/callbacks', label: 'Callbacks' },
 ];
 
 /** Normalize whatever's currently in the URL to one of the known routes. */

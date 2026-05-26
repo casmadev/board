@@ -10,6 +10,7 @@ import type {
   CasmaBoardProps,
   ContextMenuRender,
   Shape,
+  ShapeCallbacks,
   ShapeKind,
   Slots,
   ToolId,
@@ -84,7 +85,36 @@ export function CasmaBoard(props: CasmaBoardProps) {
     doubleClickSpawn = 'sticky',
     slots,
     contextMenu,
+    onShapeAdd,
+    onShapeRemove,
+    onShapePatch,
+    onShapeSelect,
+    onShapeDeselect,
+    onShapeEditStart,
+    onShapeEditCommit,
+    onShapeEditCancel,
+    onShapeDragStart,
+    onShapeDragMove,
+    onShapeDragEnd,
   } = props;
+
+  // Stash callbacks in a ref so the closures below stay stable across renders
+  // (don't want to rebuild `dragHandlersFactory` or other useCallbacks every
+  // time a parent re-renders with a fresh inline lambda).
+  const callbacksRef = useRef<ShapeCallbacks>({});
+  callbacksRef.current = {
+    onShapeAdd,
+    onShapeRemove,
+    onShapePatch,
+    onShapeSelect,
+    onShapeDeselect,
+    onShapeEditStart,
+    onShapeEditCommit,
+    onShapeEditCancel,
+    onShapeDragStart,
+    onShapeDragMove,
+    onShapeDragEnd,
+  };
 
   // Default to the sticky-only set when the consumer doesn't pass shapeKinds.
   // This is what makes `<CasmaBoard />` "just work" out of the box.
@@ -138,6 +168,11 @@ export function CasmaBoard(props: CasmaBoardProps) {
   // "puts the shape back".
   const [editVersions, setEditVersions] = useState<Record<string, number>>({});
 
+  // Internal end-of-edit. Stays silent on callbacks — the *kind* decides
+  // commit vs cancel via the wrapped onCommitEdit/onCancelEdit props
+  // (below). Click-outside / global-Escape paths call this directly and
+  // let the kind's cleanup effect (e.g. sticky's "commit dirty draft on
+  // unmount") drive the user-facing callback.
   const endEdit = useCallback((id: string | null) => {
     setEditingId(null);
     if (id) {
@@ -148,40 +183,136 @@ export function CasmaBoard(props: CasmaBoardProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef(camera);
   cameraRef.current = camera;
+  // Latest shapes state — read by callbacks that need the freshest shape
+  // (e.g. firing `onShapeDragMove` with the post-patch position, or
+  // `onShapeEditCommit` with the post-edit text). Updated below at render
+  // time after `shapesState` is destructured from `useShapes`.
+  const shapesStateRef = useRef(shapesState);
+  shapesStateRef.current = shapesState;
+  // Per-id post-patch snapshot, updated synchronously inside patchShape's
+  // reducer. Callbacks (drag move/end, edit commit) read from this *first*
+  // because `shapesStateRef` is only refreshed on render — and React may
+  // not have rendered between a pointermove patch and the immediately-
+  // following pointerup. Falls back to shapesStateRef for shapes that
+  // haven't been patched in this lifecycle (e.g. drag-start: position
+  // hasn't changed yet).
+  const latestShapesRef = useRef<Record<string, Shape>>({});
+  const readShape = useCallback((id: string): Shape | undefined => {
+    return latestShapesRef.current[id] ?? shapesStateRef.current.shapes[id];
+  }, []);
+
+  // Run a mutation-callback and fold its return into a patch. Returns the
+  // patch the board should commit (`base` plus any override from the
+  // consumer). The proposed merged shape is built once and passed to the
+  // callback so it sees the "would-be-committed" view. The override happens
+  // before any state mutation, so the entire change lands in a single
+  // setShapesState — no flash.
+  type MutationCb<R> = ((shape: Shape) => R) | undefined;
+  const applyMutationCallback = useCallback(
+    (
+      prev: Shape,
+      base: Partial<Shape>,
+      cb: MutationCb<Partial<Shape> | void>,
+    ): { patch: Partial<Shape>; merged: Shape } => {
+      const proposed = { ...prev, ...base } as Shape;
+      const override = cb?.(proposed);
+      if (override && Object.keys(override).length > 0) {
+        return {
+          patch: { ...base, ...override },
+          merged: { ...proposed, ...override } as Shape,
+        };
+      }
+      return { patch: base, merged: proposed };
+    },
+    [],
+  );
 
   const panZoom = usePanZoom({ viewportRef, camera, setCamera });
 
-  const select = useCallback((id: string | null) => {
-    setSelectedId(id);
-    // Note: we deliberately do NOT reorder shapes here. Reordering would
-    // move the DOM node via insertBefore, which can release the active
-    // pointer capture and abort an in-progress drag. The selected shape is
-    // brought visually on top via CSS z-index instead.
-  }, []);
+  // Mirrors selectedId outside the React state so `select` can compare the
+  // incoming id against the live previous one without re-entrant
+  // setSelectedId calls (which would fire callbacks twice under StrictMode).
+  const selectedIdRef = useRef<string | null>(null);
+  const select = useCallback(
+    (id: string | null) => {
+      const prev = selectedIdRef.current;
+      if (prev !== id) {
+        selectedIdRef.current = id;
+        setSelectedId(id);
+        // Fire onShapeDeselect for the previously-selected shape when the
+        // selection moves elsewhere (or is cleared).
+        if (prev !== null) {
+          const prevShape = readShape(prev);
+          // prevShape can be undefined if the shape was just removed —
+          // `removeShape` handles the remove callback itself, so just skip
+          // deselect in that case.
+          if (prevShape) callbacksRef.current.onShapeDeselect?.(prevShape);
+        }
+        if (id !== null) {
+          const newShape = readShape(id);
+          if (newShape) callbacksRef.current.onShapeSelect?.(newShape);
+        }
+      }
+      // Note: we deliberately do NOT reorder shapes here. Reordering would
+      // move the DOM node via insertBefore, which can release the active
+      // pointer capture and abort an in-progress drag. The selected shape is
+      // brought visually on top via CSS z-index instead.
+    },
+    [readShape],
+  );
 
   // Shape mutators wired once and reused by both the per-shape renderer and
   // the BoardContext exposed to slot content. `setShapesState` is a callable
   // ref-backed setter, so closure freshness isn't an issue.
   const patchShape = useCallback(
     (id: string, next: Partial<Shape>) => {
-      setShapesState((s) => updateShape(s, id, next));
+      const prev = readShape(id);
+      if (!prev) return;
+      // Fire onShapePatch first and let it override fields — folding the
+      // consumer's return into the same setShapesState below keeps the
+      // mutation single-render. The patchShape contract guarantees the
+      // committed shape is what the callback returned (if it returned
+      // anything), not just what the caller asked for.
+      const { patch, merged } = applyMutationCallback(prev, next, (s) =>
+        callbacksRef.current.onShapePatch?.(s, next),
+      );
+      latestShapesRef.current[id] = merged;
+      setShapesState((s) => updateShape(s, id, patch));
     },
-    [setShapesState],
+    [setShapesState, readShape, applyMutationCallback],
   );
 
   const removeShape = useCallback(
     (id: string) => {
+      // Snapshot before deletion so the callback can read the final state.
+      const removed = readShape(id);
       setShapesState((s) => deleteShape(s, id));
+      delete latestShapesRef.current[id];
       // If the deleted shape was the selection, clear it — otherwise the
-      // context menu would point at a missing shape next render.
-      setSelectedId((sel) => (sel === id ? null : sel));
+      // context menu would point at a missing shape next render. Drop the
+      // selectedIdRef + state directly (not through `select`) so
+      // onShapeDeselect doesn't fire alongside onShapeRemove; the consumer
+      // correlates the two via onShapeRemove alone.
+      if (selectedIdRef.current === id) {
+        selectedIdRef.current = null;
+        setSelectedId(null);
+      }
+      if (removed) callbacksRef.current.onShapeRemove?.(removed);
     },
-    [setShapesState],
+    [setShapesState, readShape],
   );
 
   const addShapeFn = useCallback(
     (shape: Shape) => {
-      setShapesState((s) => addShape(s, shape));
+      // Let onShapeAdd override fields *before* the shape lands in state —
+      // again, one setShapesState call, no transitional render.
+      const override = callbacksRef.current.onShapeAdd?.(shape);
+      const final =
+        override && Object.keys(override).length > 0
+          ? ({ ...shape, ...override } as Shape)
+          : shape;
+      setShapesState((s) => addShape(s, final));
+      latestShapesRef.current[final.id] = final;
     },
     [setShapesState],
   );
@@ -189,8 +320,36 @@ export function CasmaBoard(props: CasmaBoardProps) {
   const dragHandlersFactory = useDragShape({
     cameraRef,
     onSelect: select,
-    onMove: (id, x, y) => patchShape(id, { x: snap(x), y: snap(y) }),
-    onDragChange: (id, isDragging) => setDraggingId(isDragging ? id : null),
+    onMove: (id, x, y) => {
+      const prev = readShape(id);
+      if (!prev) return;
+      // Drag callback fires *first* with the proposed snapped position so
+      // the consumer can clamp / replace it inline. The folded override is
+      // threaded into the patch, then patchShape applies it (still calling
+      // onShapePatch with the post-drag-clamp shape, so two transform
+      // points stack cleanly).
+      const baseDiff = { x: snap(x), y: snap(y) } as Partial<Shape>;
+      const { patch } = applyMutationCallback(prev, baseDiff, (s) =>
+        callbacksRef.current.onShapeDragMove?.(s),
+      );
+      patchShape(id, patch);
+    },
+    onDragChange: (id, isDragging) => {
+      setDraggingId(isDragging ? id : null);
+      const prev = readShape(id);
+      if (!prev) return;
+      // Drag start/end can transform too (e.g. "lift" visual via a tilt
+      // patch). Empty base patch — the callback is the *only* source of
+      // mutation here. When the consumer returns nothing, we skip the
+      // setShapesState entirely and just fire the event side-effects.
+      const cb = isDragging
+        ? callbacksRef.current.onShapeDragStart
+        : callbacksRef.current.onShapeDragEnd;
+      const override = cb?.(prev);
+      if (override && Object.keys(override).length > 0) {
+        patchShape(id, override);
+      }
+    },
   });
 
   // Single creation path used by both the viewport click and the toolbar's
@@ -301,7 +460,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (e.key === 'Escape') {
         endEdit(editingId);
-        setSelectedId(null);
+        select(null);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         e.preventDefault();
         removeShape(selectedId);
@@ -309,7 +468,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedId, editingId, removeShape, endEdit]);
+  }, [selectedId, editingId, removeShape, endEdit, select]);
 
   const ordered = useMemo(() => getOrderedShapes(shapesState), [shapesState]);
   const selectedShape: Shape | undefined =
@@ -333,7 +492,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
       direction,
       selectedId,
       selectedShape,
-      setSelectedId,
+      setSelectedId: select,
       editingId,
       setEditingId,
       patchShape,
@@ -357,6 +516,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
       direction,
       selectedId,
       selectedShape,
+      select,
       editingId,
       patchShape,
       removeShape,
@@ -464,9 +624,50 @@ export function CasmaBoard(props: CasmaBoardProps) {
                   pointerHandlers={handlers}
                   className={className}
                   onSelect={isDisabled ? noop : () => select(shape.id)}
-                  onStartEdit={isDisabled ? noop : () => setEditingId(shape.id)}
-                  onCommitEdit={isDisabled ? noop : () => endEdit(shape.id)}
-                  onCancelEdit={isDisabled ? noop : () => endEdit(shape.id)}
+                  onStartEdit={
+                    isDisabled
+                      ? noop
+                      : () => {
+                          setEditingId(shape.id);
+                          const fresh = readShape(shape.id);
+                          if (!fresh) return;
+                          const override =
+                            callbacksRef.current.onShapeEditStart?.(fresh);
+                          if (override && Object.keys(override).length > 0) {
+                            patchShape(shape.id, override);
+                          }
+                        }
+                  }
+                  onCommitEdit={
+                    isDisabled
+                      ? noop
+                      : () => {
+                          endEdit(shape.id);
+                          // Sticky calls patch() right before onCommitEdit, so
+                          // readShape returns the post-edit text already.
+                          const fresh = readShape(shape.id);
+                          if (!fresh) return;
+                          const override =
+                            callbacksRef.current.onShapeEditCommit?.(fresh);
+                          if (override && Object.keys(override).length > 0) {
+                            patchShape(shape.id, override);
+                          }
+                        }
+                  }
+                  onCancelEdit={
+                    isDisabled
+                      ? noop
+                      : () => {
+                          endEdit(shape.id);
+                          const fresh = readShape(shape.id);
+                          if (!fresh) return;
+                          const override =
+                            callbacksRef.current.onShapeEditCancel?.(fresh);
+                          if (override && Object.keys(override).length > 0) {
+                            patchShape(shape.id, override);
+                          }
+                        }
+                  }
                   patch={(next) => patchShape(shape.id, next)}
                 />
               );
@@ -527,3 +728,4 @@ export function CasmaBoard(props: CasmaBoardProps) {
     </BoardContext.Provider>
   );
 }
+
