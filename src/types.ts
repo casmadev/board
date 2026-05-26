@@ -86,6 +86,12 @@ export interface ShapeRenderProps<S extends Shape = Shape> {
   textOverflow: TextOverflow;
   messages: Messages;
   pointerHandlers: PointerHandlers;
+  /** Pre-composed `cb-shape` class plus any active state modifiers
+   *  (`cb-shape--selected`, `cb-shape--editing`, `cb-shape--dragging`).
+   *  Spread onto the renderer's root element to opt into the shared
+   *  cursor / selection-ring / drag-state styling. Renderers may compose
+   *  their own classes alongside. */
+  className: string;
   /** Move this shape into the selected set. */
   onSelect: () => void;
   /** Enter edit mode for this shape. */
@@ -142,6 +148,10 @@ export interface Slots {
   topLeft?: ReactNode;
   topCenter?: ReactNode;
   topRight?: ReactNode;
+  /** Centered both horizontally and vertically over the viewport. When
+   *  omitted, the board renders its default empty-state hint (which itself
+   *  self-suppresses once any shapes exist). Pass `null` to disable. */
+  center?: ReactNode;
   bottomLeft?: ReactNode;
   bottomCenter?: ReactNode;
   bottomRight?: ReactNode;

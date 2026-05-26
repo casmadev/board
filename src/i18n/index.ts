@@ -18,6 +18,9 @@ export interface Messages {
     sticky: string;
     colorPicker: string;
     deleteShape: string;
+    zoomIn: string;
+    zoomOut: string;
+    zoomReset: string;
   };
   hints: {
     emptyCanvas: string;
@@ -42,6 +45,9 @@ export const defaultMessages: Messages = {
     sticky: 'Sticky note',
     colorPicker: 'Sticky note color',
     deleteShape: 'Delete selected shape',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    zoomReset: 'Reset zoom to 100%',
   },
   hints: {
     emptyCanvas: 'Pick the sticky-note tool and click anywhere to add a note.',

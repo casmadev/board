@@ -13,8 +13,35 @@
   --cb-accent: #2563eb;
   --cb-danger: #dc2626;
   --cb-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
-  --cb-sticky-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
   --cb-selection-ring: 0 0 0 2px var(--cb-accent);
+
+  /* Sticky drop shadow — painted by a counter-tilted ::after pseudo so it
+     lies flat on the board surface regardless of how the note is tilted.
+     `inset` keeps the resting shadow tucked under the note's edges; the
+     lifted variant resets to 0 so the cast shadow can extend past. The
+     lifted variant also pushes the shadow further behind the note on Z
+     (depth) so it visibly settles on the board while the note is held up. */
+  --cb-sticky-shadow-color: rgba(0, 0, 0, 0.16);
+  --cb-sticky-shadow-blur: 1px;
+  --cb-sticky-shadow-offset: 10px;
+  --cb-sticky-shadow-inset: 4px;
+  --cb-sticky-shadow-depth: -1px;
+  --cb-sticky-shadow-color-lifted: rgba(0, 0, 0, 0.12);
+  --cb-sticky-shadow-blur-lifted: 5px;
+  --cb-sticky-shadow-offset-lifted: 28px;
+  --cb-sticky-shadow-inset-lifted: 0px;
+  --cb-sticky-shadow-depth-lifted: -64px;
+  /* Subtle contact shadow on the sticky itself — simulates the ambient
+     occlusion where the note meets the board. Stacked with the selection
+     ring when selected/editing (see .cb-sticky.cb-shape--selected). */
+  --cb-sticky-contact-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  /* How far the sticky lifts on edit (translateZ). JS used to compute this
+     into an inline transform; it now lives on .cb-sticky--editing so the
+     transform itself is class-driven and stays out of inline styles. */
+  --cb-sticky-lift: 80px;
+  /* X-axis tilt for the resting sticky. JS overrides this to `0deg` per
+     sticky when depth3d is 0, so the value here is the 3D-on default. */
+  --cb-sticky-tilt-x: 5deg;
 
   /* sticky palette */
   --cb-sticky-yellow: #ffe66d;
@@ -98,29 +125,81 @@
   transform-style: preserve-3d;
 }
 
-/* Sticky note */
-.cb-sticky {
+/* Generic shape base. The board applies `cb-shape` plus any active state
+   modifiers (`cb-shape--selected`, `cb-shape--editing`, `cb-shape--dragging`)
+   via the `className` prop on ShapeRenderProps. Custom shape kinds get the
+   states for free by spreading that prop onto their root element. */
+.cb-shape {
   position: absolute;
-  padding: var(--cb-sticky-padding);
-  border-radius: var(--cb-sticky-radius);
-  box-shadow: var(--cb-sticky-shadow);
   cursor: grab;
   outline: none;
-  background: var(--cb-sticky-yellow);
-  color: #1f1f1f;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transform-origin: center top;
-  /* Animates the lift on edit-enter and the put-back + Z-rotation reroll on
-     edit-exit. Easing is slightly springy for the "small human errors" feel. */
+  /* Preserve 3D so a shape's pseudo-shadow (or other 3D children) survive
+     instead of being flattened back onto the shape's local plane. */
+  transform-style: preserve-3d;
+  /* Slightly springy transition so any shape that animates its transform
+     (e.g. sticky's edit lift + wobble reroll) gets the same feel for free.
+     Box-shadow transitions the selection ring on/off. */
   transition:
     transform 380ms cubic-bezier(0.2, 0.85, 0.3, 1.05),
     box-shadow 240ms ease-out;
 }
-.cb-sticky:active {
+
+/* Selected: ring + lift above unselected siblings (DOM order is preserved
+   so an in-flight drag doesn't lose pointer capture; z-index does the work). */
+.cb-shape--selected {
+  box-shadow: var(--cb-selection-ring);
+  z-index: 1;
+}
+
+/* Editing: same ring, lifted one notch higher so it sits over a freshly
+   selected (but not editing) shape if they ever overlap. Individual shape
+   kinds layer their own editing cursor/UX on top — e.g. .cb-sticky--editing
+   sets `cursor: text`. */
+.cb-shape--editing {
+  box-shadow: var(--cb-selection-ring);
+  z-index: 2;
+}
+
+/* Dragging: applied while the user is actively moving the shape (past the
+   drag threshold). Replaces the old `.cb-sticky:active` selector — driven
+   by useDragShape so it applies uniformly to every shape kind. */
+.cb-shape--dragging {
   cursor: grabbing;
+}
+
+/* Sticky note — extends .cb-shape with surface chrome and a top-pivot
+   transform origin for the wobble + edit-lift animation. The contact
+   shadow is a subtle outward box-shadow that simulates ambient occlusion
+   where the note meets the board.
+
+   Transform: X tilt comes from the cascaded --cb-sticky-tilt-x (JS
+   overrides to 0deg per sticky when 3D is disabled); wobble is the random
+   Z rotation set inline as --cb-sticky-wobble per shape. translateZ(0) is
+   here so .cb-sticky--editing can transition into translateZ(--cb-sticky-
+   lift) via the same function list (per-function interpolation). */
+.cb-sticky {
+  padding: var(--cb-sticky-padding);
+  border-radius: var(--cb-sticky-radius);
+  background: var(--cb-sticky-yellow);
+  color: #1f1f1f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center top;
+  transform:
+    translateZ(0)
+    rotateX(var(--cb-sticky-tilt-x, 0deg))
+    rotate(var(--cb-sticky-wobble, 0deg));
+  box-shadow: var(--cb-sticky-contact-shadow);
+}
+/* When selected / editing, stack the contact shadow under the selection
+   ring instead of letting the .cb-shape--* rule replace it. Specificity
+   (0,2,0) outranks the generic (0,1,0) state rule, so this wins. */
+.cb-sticky.cb-shape--selected,
+.cb-sticky.cb-shape--editing {
+  box-shadow:
+    var(--cb-sticky-contact-shadow),
+    var(--cb-selection-ring);
 }
 .cb-sticky--yellow { background: var(--cb-sticky-yellow); }
 .cb-sticky--pink   { background: var(--cb-sticky-pink); }
@@ -128,22 +207,57 @@
 .cb-sticky--green  { background: var(--cb-sticky-green); }
 .cb-sticky--purple { background: var(--cb-sticky-purple); }
 
-.cb-sticky--selected {
-  box-shadow:
-    var(--cb-sticky-shadow),
-    var(--cb-selection-ring);
-  /* Visually bring the selected sticky on top without reordering the DOM
-     (DOM reordering can release pointer capture and abort an in-flight drag). */
-  z-index: 1;
+/* Drop shadow painted as a pseudo-element. Counter-rotates the parent's
+   X tilt (mirrored from JS into --cb-sticky-tilt-x) so the shadow lies
+   parallel to the board surface even as the note tips toward the viewer.
+   The wobble Z rotation is intentionally NOT cancelled — the shadow shares
+   the note's footprint, which is the correct projection on the board. */
+.cb-sticky::after {
+  content: '';
+  position: absolute;
+  inset: var(--cb-sticky-shadow-inset);
+  border-radius: inherit;
+  background: var(--cb-sticky-shadow-color);
+  filter: blur(var(--cb-sticky-shadow-blur));
+  transform:
+    translateY(var(--cb-sticky-shadow-offset))
+    translateZ(var(--cb-sticky-shadow-depth, -1px))
+    rotateX(calc(var(--cb-sticky-tilt-x, 0deg) * -1));
+  transform-origin: center top;
+  pointer-events: none;
+  z-index: -1;
+  transition:
+    transform 380ms cubic-bezier(0.2, 0.85, 0.3, 1.05),
+    filter 240ms ease-out,
+    background-color 240ms ease-out,
+    inset 240ms ease-out;
 }
+
+/* Sticky-only editing tweaks: text cursor while the contenteditable has
+   focus, plus the "raised off the board" transform. Tilt and wobble are
+   explicitly zeroed (same function list as .cb-sticky so the .cb-shape
+   transition interpolates per-function rather than via matrix decompose).
+   Overriding --cb-sticky-tilt-x to 0deg also flattens the ::after pseudo's
+   counter-rotation, keeping the lifted shadow parallel to the board.
+   Selection ring + z-lift come from .cb-shape--editing. */
 .cb-sticky--editing {
-  /* Editing happens in place. Stronger shadow communicates the "lifted off
-     the canvas" state; the transform itself supplies the translateZ. */
-  box-shadow:
-    0 18px 32px rgba(0, 0, 0, 0.18),
-    var(--cb-selection-ring);
   cursor: text;
-  z-index: 2;
+  --cb-sticky-tilt-x: 0deg;
+  transform:
+    translateZ(var(--cb-sticky-lift, 80px))
+    rotateX(0deg)
+    rotate(0deg);
+}
+.cb-sticky--editing::after {
+  /* Higher lift → larger, more diffuse, more offset shadow that extends
+     past the note's footprint (inset goes back to 0). */
+  inset: var(--cb-sticky-shadow-inset-lifted);
+  background: var(--cb-sticky-shadow-color-lifted);
+  filter: blur(var(--cb-sticky-shadow-blur-lifted));
+  transform:
+    translateY(var(--cb-sticky-shadow-offset-lifted))
+    translateZ(var(--cb-sticky-shadow-depth-lifted, -64px))
+    rotateX(calc(var(--cb-sticky-tilt-x, 0deg) * -1));
 }
 .cb-sticky--editing .cb-sticky__text {
   cursor: text;
@@ -226,23 +340,19 @@
   justify-content: flex-start;
 }
 
-/* Empty hint */
+/* Empty hint — rendered as the default content of the `center` slot.
+   Positioning is delegated to .cb-slot--center; only typography lives here. */
 .cb-empty-hint {
-  position: absolute;
-  inset-inline-start: 50%;
-  inset-block-start: 50%;
-  transform: translate(-50%, -50%);
   color: var(--cb-text-muted);
   font-size: 14px;
   text-align: center;
-  pointer-events: none;
   padding-inline: 16px;
 }
 
-/* Slot overlays — six anchor points for custom chrome. Wrapper itself is
+/* Slot overlays — seven anchor points for custom chrome. Wrapper itself is
    transparent to pointer events; only its children opt back in via `pointer-
    events: auto` (the toolbar/context-menu rules below). Centers use physical
-   `left: 50%` + `translateX(-50%)` so they sit visually centered regardless
+   `left: 50%` + `translateX/Y(-50%)` so they sit visually centered regardless
    of `dir`. */
 .cb-slot {
   position: absolute;
@@ -256,6 +366,7 @@
 .cb-slot--top-left    { top: 16px;    left: 16px; }
 .cb-slot--top-right   { top: 16px;    right: 16px; }
 .cb-slot--top-center  { top: 16px;    left: 50%; transform: translateX(-50%); }
+.cb-slot--center      { top: 50%;     left: 50%; transform: translate(-50%, -50%); }
 .cb-slot--bottom-left { bottom: 16px; left: 16px; }
 .cb-slot--bottom-right{ bottom: 16px; right: 16px; }
 .cb-slot--bottom-center{ bottom: 16px; left: 50%; transform: translateX(-50%); }
@@ -351,3 +462,57 @@
 .cb-color-swatch--blue   { background: var(--cb-sticky-blue); }
 .cb-color-swatch--green  { background: var(--cb-sticky-green); }
 .cb-color-swatch--purple { background: var(--cb-sticky-purple); }
+
+/* Default zoom widget — lives in the bottomRight slot. Mirrors the toolbar
+   chrome (same surface + radius + shadow) so the two read as a set. */
+.cb-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--cb-surface);
+  border: 1px solid var(--cb-surface-border);
+  border-radius: var(--cb-toolbar-radius);
+  box-shadow: var(--cb-shadow);
+  user-select: none;
+  pointer-events: auto;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.cb-zoom__btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--cb-text);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  transition: background 120ms ease;
+}
+.cb-zoom__btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+.cb-zoom__pct {
+  appearance: none;
+  border: none;
+  background: transparent;
+  min-width: 44px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--cb-text);
+  font: inherit;
+  text-align: center;
+  transition: background 120ms ease;
+}
+.cb-zoom__pct:hover {
+  background: rgba(0, 0, 0, 0.05);
+}

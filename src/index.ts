@@ -4,6 +4,8 @@ export { CasmaBoard } from './CasmaBoard';
 // layout (drop them into custom slots, render outside the board, etc.).
 export { DefaultToolbar } from './components/DefaultToolbar';
 export { DefaultContextMenu } from './components/DefaultContextMenu';
+export { DefaultEmptyHint } from './components/DefaultEmptyHint';
+export { DefaultZoomWidget } from './components/DefaultZoomWidget';
 export { ColorPicker } from './components/ColorPicker';
 
 // Shape kinds. `defaultShapeKinds` is the sticky-only set the component

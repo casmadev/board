@@ -18,6 +18,9 @@ export const es: Messages = {
     sticky: 'Nota adhesiva',
     colorPicker: 'Color de la nota',
     deleteShape: 'Eliminar forma seleccionada',
+    zoomIn: 'Ampliar',
+    zoomOut: 'Reducir',
+    zoomReset: 'Restablecer zoom al 100%',
   },
   hints: {
     emptyCanvas: 'Selecciona la herramienta de nota y haz clic para añadir una.',

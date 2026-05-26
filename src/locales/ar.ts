@@ -18,6 +18,9 @@ export const ar: Messages = {
     sticky: 'ملاحظة لاصقة',
     colorPicker: 'لون الملاحظة',
     deleteShape: 'حذف الشكل المحدد',
+    zoomIn: 'تكبير',
+    zoomOut: 'تصغير',
+    zoomReset: 'إعادة تعيين التكبير إلى 100٪',
   },
   hints: {
     emptyCanvas: 'اختر أداة الملاحظة وانقر في أي مكان لإضافة واحدة.',

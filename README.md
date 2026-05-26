@@ -71,7 +71,7 @@ state for `shapes` and `camera`.
 | `className`, `style` | — | — | Passed to the root container. |
 | `shapeKinds` | `ShapeKind<any>[]` | `defaultShapeKinds` (sticky only) | Plugin array of shape types the board knows how to render and create. See [Customization](#customization). |
 | `defaultTool` | `ToolId` | `'select'` | Initial tool. Either `'select'` or any shape kind's tool id. |
-| `slots` | `Slots` | `{}` | Six overlay slots — see [Slots](#slots). |
+| `slots` | `Slots` | `{}` | Seven overlay slots — see [Slots](#slots). Three ship defaults (`DefaultToolbar`, `DefaultZoomWidget`, `DefaultEmptyHint`); omit a key to keep the default, pass `null` to suppress it. |
 | `contextMenu` | `(props) => ReactNode` | `DefaultContextMenu` | Render function for the per-shape context menu. |
 
 ## Internationalization
@@ -122,7 +122,7 @@ All class names are prefixed `cb-` to avoid collisions.
 ## Customization
 
 The canvas is fully composable. Every default surface (toolbar, context menu,
-the sticky note itself) is a plug-in you can replace, and there are six
+the sticky note itself) is a plug-in you can replace, and there are seven
 overlay slots for dropping your own chrome anywhere on the board.
 
 ### Easy default
@@ -157,11 +157,12 @@ interface BoxShape {
   label: string;
 }
 
-function BoxRenderer({ shape, pointerHandlers, onSelect }: ShapeRenderProps<BoxShape>) {
+function BoxRenderer({ shape, pointerHandlers, onSelect, className }: ShapeRenderProps<BoxShape>) {
   return (
     <div
+      className={className}           // opts into cb-shape baseline + selected/editing/dragging state classes
       data-shape-id={shape.id}      // required: identifies this DOM node as a shape
-      style={{ position: 'absolute', left: shape.x, top: shape.y, width: shape.w, height: shape.h, background: 'tomato' }}
+      style={{ left: shape.x, top: shape.y, width: shape.w, height: shape.h, background: 'tomato' }}
       tabIndex={0}
       onFocus={onSelect}
       {...pointerHandlers}            // wire drag + select
@@ -183,34 +184,46 @@ const boxKind: ShapeKind<BoxShape> = {
 ```
 
 Your renderer receives `selected`, `editing`, `editVersion`, `patch`,
-`onSelect`, `onStartEdit`, `onCommitEdit`, `onCancelEdit` — everything you
-need to participate in the board's lifecycle. The board itself never reads
-your shape's extra fields; you own how they're stored and rendered.
+`onSelect`, `onStartEdit`, `onCommitEdit`, `onCancelEdit`, and a pre-composed
+`className` — everything you need to participate in the board's lifecycle.
+Spreading `className` onto your root opts the shape into the shared
+`cb-shape` baseline (absolute positioning, grab/grabbing cursor, transitions)
+plus state modifiers (`cb-shape--selected`, `cb-shape--editing`,
+`cb-shape--dragging`); you can compose your own classes alongside. The board
+itself never reads your shape's extra fields; you own how they're stored and
+rendered.
 
 ### Slots
 
-Six fixed overlays anchored over the viewport. Each accepts any `ReactNode`.
-The wrapper is transparent to pointer events; only your content captures
-clicks.
+Seven fixed overlays anchored over the viewport — six corners/edges plus a
+centered overlay for empty-state hints and onboarding affordances. Each
+accepts any `ReactNode`. The wrapper is transparent to pointer events; only
+your content captures clicks.
 
 ```tsx
 <CasmaBoard
   slots={{
     topLeft:     <MyTitleBar />,
     topCenter:   <MyBreadcrumbs />,
-    topRight:    <MyZoomReadout />,
+    topRight:    <MyDemoControls />,
+    center:      <MyOnboarding />,       // overrides the DefaultEmptyHint
     bottomLeft:  <MyStatusChip />,
-    bottomCenter: <MyCustomToolbar />,  // overrides the DefaultToolbar
-    bottomRight: <MySelectionInspector />,
+    bottomCenter: <MyCustomToolbar />,   // overrides the DefaultToolbar
+    bottomRight: <MyZoomWidget />,       // overrides the DefaultZoomWidget
   }}
 />
 ```
 
-The default toolbar lives in `bottomCenter`. Three ways to control it:
+Three slots ship with defaults — same omit/replace/suppress convention each:
 
-1. **Default behavior.** Omit `slots.bottomCenter` → `DefaultToolbar` is rendered.
-2. **Replace it.** Pass any node into `slots.bottomCenter`.
-3. **Suppress it.** Pass `slots={{ bottomCenter: null }}` to leave the slot empty.
+| Slot | Default | Notes |
+| --- | --- | --- |
+| `bottomCenter` | `DefaultToolbar` | Tool picker. |
+| `bottomRight` | `DefaultZoomWidget` | − / % / +. The percentage is clickable and snaps to 100%. |
+| `center` | `DefaultEmptyHint` | Localized "click to add a note" hint that self-suppresses once any shape exists. |
+
+For each: omit the key → default renders, pass `null` → slot is suppressed,
+pass any value → that value renders. `hideUI` short-circuits all three.
 
 Custom slot content can drive the board via the `useCasmaBoard()` hook:
 
@@ -258,6 +271,8 @@ Every default surface is exported individually so you can mix-and-match:
 ```ts
 import {
   DefaultToolbar,           // bottom-center tool picker
+  DefaultZoomWidget,        // bottom-right zoom (−/%/+)
+  DefaultEmptyHint,         // center empty-state hint
   DefaultContextMenu,       // sticky color picker + delete
   ColorPicker,              // sticky color swatches
   stickyKind,               // the built-in sticky ShapeKind

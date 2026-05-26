@@ -33,9 +33,10 @@ describe('CasmaBoard customization', () => {
 
     it('omits empty slot wrappers entirely', () => {
       const { container } = render(<CasmaBoard slots={{ topLeft: <div>x</div> }} />);
-      // Only one slot beyond the default bottomCenter (DefaultToolbar).
+      // 1 consumer slot + 3 defaults (bottomCenter toolbar, bottomRight zoom,
+      // center empty hint). Empty/unused slots emit no wrapper at all.
       const slots = container.querySelectorAll('.cb-slot');
-      expect(slots.length).toBe(2);
+      expect(slots.length).toBe(4);
     });
 
     it('replaces the default toolbar when bottomCenter is provided', () => {
@@ -204,6 +205,65 @@ describe('CasmaBoard customization', () => {
       render(<CasmaBoard shapeKinds={[stickyKind, boxKind]} />);
       expect(screen.getByRole('button', { name: /sticky note/i })).toBeInTheDocument();
       expect(screen.getByTestId('box-icon')).toBeInTheDocument();
+    });
+
+    it('passes a cb-shape className that reflects selected / dragging state', async () => {
+      // Renderer that spreads the board-provided className. This is the
+      // recommended pattern — custom kinds opt into the shared cursor,
+      // selection ring, z-lift, and grabbing cursor via this one prop.
+      const ClassedBox = ({ shape, pointerHandlers, className }: ShapeRenderProps<BoxShape>) => (
+        <div
+          data-shape-id={shape.id}
+          data-testid={`box-${shape.id}`}
+          className={className}
+          style={{
+            left: shape.x,
+            top: shape.y,
+            width: shape.w,
+            height: shape.h,
+            background: 'tomato',
+          }}
+          {...pointerHandlers}
+        />
+      );
+      const classedKind: ShapeKind<BoxShape> = { ...boxKind, Component: ClassedBox };
+      render(
+        <CasmaBoard
+          shapeKinds={[classedKind]}
+          defaultShapes={{
+            shapes: {
+              x: {
+                id: 'x',
+                type: 'box',
+                x: 0,
+                y: 0,
+                w: 80,
+                h: 60,
+                label: 'b',
+              } as BoxShape,
+            },
+            order: ['x'],
+          }}
+        />,
+      );
+      const box = screen.getByTestId('box-x');
+      // Baseline: cb-shape applied, no state modifiers yet.
+      expect(box.className).toBe('cb-shape');
+
+      // Pointerdown selects → cb-shape--selected appears.
+      const user = userEvent.setup();
+      await user.pointer({ keys: '[MouseLeft>]', target: box });
+      expect(box.className).toContain('cb-shape--selected');
+      expect(box.className).not.toContain('cb-shape--dragging');
+
+      // Move past the 4px threshold → cb-shape--dragging is added.
+      await user.pointer({ coords: { x: 50, y: 50 } });
+      expect(box.className).toContain('cb-shape--dragging');
+
+      // Release → dragging clears, selection persists.
+      await user.pointer({ keys: '[/MouseLeft]' });
+      expect(box.className).not.toContain('cb-shape--dragging');
+      expect(box.className).toContain('cb-shape--selected');
     });
   });
 

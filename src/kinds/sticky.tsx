@@ -3,10 +3,8 @@ import type { ShapeKind, ShapeRenderProps, StickyShape } from '../types';
 import { fitText, truncateToFit } from '../geometry/fitText';
 import {
   DEFAULT_STICKY_SIZE,
-  STICKY_EDIT_LIFT_PX,
   STICKY_FONT_MAX,
   STICKY_FONT_MIN,
-  STICKY_TILT_X_DEG,
   STICKY_Z_ROT_MAX_DEG,
 } from '../constants';
 import { createStickyShape } from '../state/reducer';
@@ -92,6 +90,7 @@ export function StickyNote({
   depth3d,
   messages,
   pointerHandlers,
+  className,
   onSelect,
   onStartEdit,
   onCommitEdit,
@@ -202,23 +201,14 @@ export function StickyNote({
     };
   }, [editing, shape.id, shape.w, shape.h]);
 
-  const zRotDeg = useMemo(() => {
+  // Random Z rotation rolled deterministically from shape.id (+ editVersion
+  // so it rerolls each time the user "puts the sticky back"). Surfaced as a
+  // CSS variable; the actual transform lives in .cb-sticky in the stylesheet.
+  const wobbleDeg = useMemo(() => {
     const h = hashId(shape.id, editVersion);
     const t = (h & 0xff) / 0xff;
     return (t * 2 - 1) * STICKY_Z_ROT_MAX_DEG;
   }, [shape.id, editVersion]);
-
-  // While editing, the sticky is held flat off the page — no tilt, no wobble,
-  // just the translateZ lift. On exit, both rotations re-engage (with a new
-  // wobble rolled from editVersion) and CSS interpolates each operation, so
-  // the put-back motion combines a descent + slight re-rotation.
-  const lift = editing ? STICKY_EDIT_LIFT_PX : 0;
-  const tiltX = editing ? 0 : STICKY_TILT_X_DEG;
-  const wobble = editing ? 0 : zRotDeg;
-  const transform =
-    depth3d > 0
-      ? `translateZ(${lift}px) rotateX(${tiltX}deg) rotate(${wobble}deg)`
-      : `rotate(${wobble}deg)`;
 
   // Drag handlers are inert during edit so clicks position the caret instead.
   const handlers = editing
@@ -233,14 +223,23 @@ export function StickyNote({
 
   return (
     <div
-      className={`cb-sticky cb-sticky--${shape.color}${selected ? ' cb-sticky--selected' : ''}${editing ? ' cb-sticky--editing' : ''}`}
+      className={`${className} cb-sticky cb-sticky--${shape.color}${editing ? ' cb-sticky--editing' : ''}`}
       style={{
         left: shape.x,
         top: shape.y,
         width: shape.w,
         height: shape.h,
-        transform,
-      }}
+        // Wobble is the per-sticky random Z rotation; the transform lives
+        // in .cb-sticky. Tilt's 3D-on default (5deg) is on .cb-root so
+        // .cb-sticky--editing can cascade an override to 0deg. We only
+        // touch the var inline when 3D is OFF — an inline value would
+        // beat the editing-class override and leave the lifted shadow
+        // counter-rotated against a parent that isn't tilted.
+        ['--cb-sticky-wobble' as string]: `${wobbleDeg}deg`,
+        ...(depth3d > 0
+          ? null
+          : { ['--cb-sticky-tilt-x' as string]: '0deg' }),
+      } as React.CSSProperties}
       data-shape-id={shape.id}
       role="group"
       tabIndex={editing ? -1 : 0}

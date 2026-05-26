@@ -18,6 +18,9 @@ export const ja: Messages = {
     sticky: '付箋',
     colorPicker: '付箋の色',
     deleteShape: '選択した図形を削除',
+    zoomIn: '拡大',
+    zoomOut: '縮小',
+    zoomReset: 'ズームを100%にリセット',
   },
   hints: {
     emptyCanvas: '付箋ツールを選び、キャンバスをクリックして追加します。',

@@ -33,6 +33,8 @@ import { screenToWorld } from './geometry/camera';
 import { World } from './components/World';
 import { DefaultToolbar } from './components/DefaultToolbar';
 import { DefaultContextMenu } from './components/DefaultContextMenu';
+import { DefaultEmptyHint } from './components/DefaultEmptyHint';
+import { DefaultZoomWidget } from './components/DefaultZoomWidget';
 import { SlotOverlays } from './components/Slots';
 import { defaultShapeKinds } from './kinds';
 import { DEFAULT_DEPTH_3D, GRID_SIZE } from './constants';
@@ -111,6 +113,9 @@ export function CasmaBoard(props: CasmaBoardProps) {
   const [tool, setTool] = useState<ToolId>(defaultTool);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Id of the shape currently past the drag threshold, if any. Drives the
+  // `cb-shape--dragging` modifier so cursor / styling can respond uniformly.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   // Per-shape version counter — bumped each time editing ends. Renderers can
   // mix this into their hash so wobble/etc rerolls every time the user
   // "puts the shape back".
@@ -168,6 +173,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
     cameraRef,
     onSelect: select,
     onMove: (id, x, y) => patchShape(id, { x: snap(x), y: snap(y) }),
+    onDragChange: (id, isDragging) => setDraggingId(isDragging ? id : null),
   });
 
   // Click on empty viewport: create a shape (for any non-select tool) or
@@ -291,15 +297,22 @@ export function CasmaBoard(props: CasmaBoardProps) {
     ],
   );
 
-  // Resolve slot content. The default toolbar lives in bottomCenter unless
-  // the consumer overrides that slot OR passes `hideUI`. Passing `null`
-  // explicitly into bottomCenter suppresses the default (useful when you
-  // want the slot truly empty).
+  // Resolve slot content. Each defaulted slot follows the same convention:
+  // omit the key → default is rendered, pass `null` → slot is suppressed,
+  // pass any value → that value is rendered. `hideUI` short-circuits all
+  // defaults (and discards consumer slot content too).
   const resolvedSlots: Slots = useMemo(() => {
     if (hideUI) return {};
-    const out: Slots = { ...(slots ?? {}) };
-    if (!('bottomCenter' in (slots ?? {}))) {
+    const provided = slots ?? {};
+    const out: Slots = { ...provided };
+    if (!('bottomCenter' in provided)) {
       out.bottomCenter = <DefaultToolbar />;
+    }
+    if (!('bottomRight' in provided)) {
+      out.bottomRight = <DefaultZoomWidget />;
+    }
+    if (!('center' in provided)) {
+      out.center = <DefaultEmptyHint />;
     }
     return out;
   }, [slots, hideUI]);
@@ -346,17 +359,29 @@ export function CasmaBoard(props: CasmaBoardProps) {
               if (!kind) return null; // unknown shape type — skip silently
               const Component = kind.Component;
               const handlers = dragHandlersFactory(shape.id, shape.x, shape.y);
+              const isSelected = selectedId === shape.id;
+              const isEditing = editingId === shape.id;
+              const isDragging = draggingId === shape.id;
+              // Pre-composed shape class. Renderers spread this on their root
+              // to opt into `cb-shape` baseline (position, cursor, transition)
+              // plus state modifiers (selection ring, z-lift, grabbing cursor).
+              const className =
+                'cb-shape' +
+                (isSelected ? ' cb-shape--selected' : '') +
+                (isEditing ? ' cb-shape--editing' : '') +
+                (isDragging ? ' cb-shape--dragging' : '');
               return (
                 <Component
                   key={shape.id}
                   shape={shape}
-                  selected={selectedId === shape.id}
-                  editing={editingId === shape.id}
+                  selected={isSelected}
+                  editing={isEditing}
                   editVersion={editVersions[shape.id] ?? 0}
                   textOverflow={textOverflow}
                   depth3d={depth3d}
                   messages={messages}
                   pointerHandlers={handlers}
+                  className={className}
                   onSelect={() => select(shape.id)}
                   onStartEdit={() => setEditingId(shape.id)}
                   onCommitEdit={() => endEdit(shape.id)}
@@ -377,10 +402,6 @@ export function CasmaBoard(props: CasmaBoardProps) {
               patch: (next) => patchShape(selectedShape.id, next),
               remove: () => removeShape(selectedShape.id),
             })}
-
-          {ordered.length === 0 && (
-            <div className="cb-empty-hint">{messages.hints.emptyCanvas}</div>
-          )}
         </div>
 
         <SlotOverlays slots={resolvedSlots} />

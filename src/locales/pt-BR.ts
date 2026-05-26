@@ -18,6 +18,9 @@ export const ptBR: Messages = {
     sticky: 'Nota adesiva',
     colorPicker: 'Cor da nota',
     deleteShape: 'Excluir forma selecionada',
+    zoomIn: 'Ampliar',
+    zoomOut: 'Reduzir',
+    zoomReset: 'Redefinir o zoom para 100%',
   },
   hints: {
     emptyCanvas: 'Selecione a ferramenta de nota e clique para adicionar uma.',

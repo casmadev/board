@@ -18,6 +18,9 @@ export const de: Messages = {
     sticky: 'Haftnotiz',
     colorPicker: 'Notizfarbe',
     deleteShape: 'Ausgewählte Form löschen',
+    zoomIn: 'Vergrößern',
+    zoomOut: 'Verkleinern',
+    zoomReset: 'Zoom auf 100% zurücksetzen',
   },
   hints: {
     emptyCanvas: 'Wähle das Haftnotiz-Werkzeug und klicke, um eine zu erstellen.',

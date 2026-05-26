@@ -18,6 +18,9 @@ export const he: Messages = {
     sticky: 'פתק דביק',
     colorPicker: 'צבע הפתק',
     deleteShape: 'מחיקת הצורה שנבחרה',
+    zoomIn: 'הגדלה',
+    zoomOut: 'הקטנה',
+    zoomReset: 'איפוס הזום ל-100%',
   },
   hints: {
     emptyCanvas: 'בחר בכלי הפתק ולחץ כדי להוסיף אחד.',

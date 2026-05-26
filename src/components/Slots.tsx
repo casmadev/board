@@ -16,6 +16,7 @@ export function SlotOverlays({ slots }: { slots: Slots }) {
       <Slot position="top-left" content={slots.topLeft} />
       <Slot position="top-center" content={slots.topCenter} />
       <Slot position="top-right" content={slots.topRight} />
+      <Slot position="center" content={slots.center} />
       <Slot position="bottom-left" content={slots.bottomLeft} />
       <Slot position="bottom-center" content={slots.bottomCenter} />
       <Slot position="bottom-right" content={slots.bottomRight} />
@@ -28,6 +29,7 @@ interface SlotProps {
     | 'top-left'
     | 'top-center'
     | 'top-right'
+    | 'center'
     | 'bottom-left'
     | 'bottom-center'
     | 'bottom-right';
