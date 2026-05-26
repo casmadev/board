@@ -201,6 +201,33 @@ export interface BoardContextValue {
   removeShape: (id: string) => void;
   /** Add a shape to the board. */
   addShape: (shape: Shape) => void;
+  /** Create a shape at the given world point using a registered tool id.
+   *  Runs the same path the viewport click takes: looks up the kind via
+   *  `shapeKinds`, calls `kind.create`, applies snap-to-grid, adds and
+   *  selects the shape, and resets the tool to `'select'`. Returns the
+   *  created shape, or `null` if `toolId` doesn't map to any kind.
+   *
+   *  Useful for drag-from-toolbar gestures or other ad-hoc creation UI. */
+  createShapeWithTool: (
+    toolId: string,
+    world: { x: number; y: number },
+  ) => Shape | null;
+  /** Generator the board uses for new shape ids — exposed so custom UI
+   *  (e.g. a drag-from-toolbar preview) can mint an id at gesture start
+   *  and reuse it on commit, keeping any per-id randomness (sticky wobble
+   *  etc.) stable between preview and final shape. */
+  generateId: () => string;
+  /** Whether the board's `snapToGrid` prop is on. Read-only mirror so
+   *  consumer UI can apply the same snap to ad-hoc creation paths. */
+  snapToGrid: boolean;
+  /** Ephemeral shape rendered inside the world at 40% opacity (via the
+   *  `cb-shape--preview` class) while a drag-from-toolbar gesture is in
+   *  flight. Set via `setDragPreview`; the board reads this and renders
+   *  it after the real shapes so it sits visually on top. */
+  dragPreview: { kind: ShapeKind<any>; shape: Shape } | null;
+  setDragPreview: (
+    preview: { kind: ShapeKind<any>; shape: Shape } | null,
+  ) => void;
   /** Element backing the clipped viewport — handy for measuring before
    *  positioning custom overlays. */
   viewportRef: RefObject<HTMLDivElement>;

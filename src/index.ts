@@ -3,6 +3,7 @@ export { CasmaBoard } from './CasmaBoard';
 // Default UI surfaces. Use these directly if you want to compose your own
 // layout (drop them into custom slots, render outside the board, etc.).
 export { DefaultToolbar } from './components/DefaultToolbar';
+export type { DefaultToolbarProps } from './components/DefaultToolbar';
 export { DefaultContextMenu } from './components/DefaultContextMenu';
 export { DefaultEmptyHint } from './components/DefaultEmptyHint';
 export { DefaultZoomWidget } from './components/DefaultZoomWidget';

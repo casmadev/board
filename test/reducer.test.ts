@@ -9,6 +9,7 @@ import {
   setStickyColor,
   setStickyText,
 } from '../src/state/reducer';
+import { DEFAULT_STICKY_SIZE } from '../src/constants';
 
 describe('reducer', () => {
   it('adds a sticky note centered on its origin', () => {
@@ -17,8 +18,8 @@ describe('reducer', () => {
     expect(next.shapes['a']).toBeDefined();
     expect(next.order).toEqual(['a']);
     // origin should be (100,100) − half size
-    expect(sticky.x).toBe(100 - 90);
-    expect(sticky.y).toBe(100 - 90);
+    expect(sticky.x).toBe(100 - DEFAULT_STICKY_SIZE.w / 2);
+    expect(sticky.y).toBe(100 - DEFAULT_STICKY_SIZE.h / 2);
   });
 
   it('does nothing when adding an existing id', () => {

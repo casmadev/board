@@ -51,6 +51,16 @@ const defaultIdGen = (): string => {
   return fallbackId();
 };
 
+const noop = () => {};
+// Drop-in pointer handlers for the drag-preview render — the preview must
+// be visible but inert so it can't accidentally start its own drag/select.
+const INERT_POINTER_HANDLERS = {
+  onPointerDown: noop,
+  onPointerMove: noop,
+  onPointerUp: noop,
+  onPointerCancel: noop,
+};
+
 export function CasmaBoard(props: CasmaBoardProps) {
   const {
     shapes: shapesProp,
@@ -116,6 +126,12 @@ export function CasmaBoard(props: CasmaBoardProps) {
   // Id of the shape currently past the drag threshold, if any. Drives the
   // `cb-shape--dragging` modifier so cursor / styling can respond uniformly.
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  // Live preview shape rendered inside .cb-world during a drag-from-toolbar
+  // gesture. Owned by the board (so it can render in the world's transform
+  // context); driven by the toolbar via setDragPreview on the context.
+  const [dragPreview, setDragPreview] = useState<
+    { kind: ShapeKind<any>; shape: Shape } | null
+  >(null);
   // Per-shape version counter — bumped each time editing ends. Renderers can
   // mix this into their hash so wobble/etc rerolls every time the user
   // "puts the shape back".
@@ -176,6 +192,26 @@ export function CasmaBoard(props: CasmaBoardProps) {
     onDragChange: (id, isDragging) => setDraggingId(isDragging ? id : null),
   });
 
+  // Single creation path used by both the viewport click and the toolbar's
+  // drag-out-onto-canvas gesture. Returns the created shape (or null when
+  // the toolId doesn't map to any kind) so callers can branch on success.
+  const createShapeWithTool = useCallback(
+    (toolId: string, world: { x: number; y: number }): Shape | null => {
+      const kind = toolKindMap.get(toolId);
+      if (!kind) return null;
+      const created = kind.create(generateId(), world.x, world.y);
+      if (snapToGrid) {
+        created.x = snap(created.x);
+        created.y = snap(created.y);
+      }
+      addShapeFn(created);
+      select(created.id);
+      setTool('select');
+      return created;
+    },
+    [toolKindMap, generateId, snapToGrid, snap, addShapeFn, select],
+  );
+
   // Click on empty viewport: create a shape (for any non-select tool) or
   // deselect (for select). Custom shape kinds get the click for free because
   // we route through `toolKindMap`.
@@ -196,39 +232,22 @@ export function CasmaBoard(props: CasmaBoardProps) {
       const world = screenToWorld(cameraRef.current, screen);
 
       if (tool !== 'select') {
-        const kind = toolKindMap.get(tool);
-        if (!kind) {
-          // Unknown tool id — treat as deselect. (A consumer might set a tool
-          // string that doesn't map to any kind; degrading gracefully beats
-          // throwing.)
-          select(null);
-          endEdit(editingId);
-          return;
-        }
-        const created = kind.create(generateId(), world.x, world.y);
-        if (snapToGrid) {
-          created.x = snap(created.x);
-          created.y = snap(created.y);
-        }
-        addShapeFn(created);
-        select(created.id);
-        setTool('select');
-      } else {
-        select(null);
-        endEdit(editingId);
+        const created = createShapeWithTool(tool, world);
+        if (created) return;
+        // Unknown tool id — fall through to deselect. (A consumer might set
+        // a tool string that doesn't map to any kind; degrading gracefully
+        // beats throwing.)
       }
+      select(null);
+      endEdit(editingId);
     },
     [
       panZoom,
       tool,
-      toolKindMap,
-      generateId,
-      addShapeFn,
+      createShapeWithTool,
       select,
       endEdit,
       editingId,
-      snap,
-      snapToGrid,
     ],
   );
 
@@ -277,6 +296,11 @@ export function CasmaBoard(props: CasmaBoardProps) {
       patchShape,
       removeShape,
       addShape: addShapeFn,
+      createShapeWithTool,
+      generateId,
+      snapToGrid,
+      dragPreview,
+      setDragPreview,
       viewportRef,
     }),
     [
@@ -294,6 +318,10 @@ export function CasmaBoard(props: CasmaBoardProps) {
       patchShape,
       removeShape,
       addShapeFn,
+      createShapeWithTool,
+      generateId,
+      snapToGrid,
+      dragPreview,
     ],
   );
 
@@ -390,6 +418,32 @@ export function CasmaBoard(props: CasmaBoardProps) {
                 />
               );
             })}
+            {dragPreview && (() => {
+              // Render the preview using the kind's own component so it
+              // matches the real shape pixel-for-pixel — wobble, tilt, the
+              // pseudo-shadow, everything. Inert handlers + the
+              // `cb-shape--preview` modifier (opacity 0.4 + pointer-events
+              // none) keep it from interfering with the in-flight gesture.
+              const C = dragPreview.kind.Component;
+              return (
+                <C
+                  shape={dragPreview.shape}
+                  selected={false}
+                  editing={false}
+                  editVersion={0}
+                  textOverflow={textOverflow}
+                  depth3d={depth3d}
+                  messages={messages}
+                  pointerHandlers={INERT_POINTER_HANDLERS}
+                  className="cb-shape cb-shape--preview"
+                  onSelect={noop}
+                  onStartEdit={noop}
+                  onCommitEdit={noop}
+                  onCancelEdit={noop}
+                  patch={noop}
+                />
+              );
+            })()}
           </World>
 
           {!hideUI &&

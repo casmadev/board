@@ -218,12 +218,30 @@ Three slots ship with defaults — same omit/replace/suppress convention each:
 
 | Slot | Default | Notes |
 | --- | --- | --- |
-| `bottomCenter` | `DefaultToolbar` | Tool picker. |
+| `bottomCenter` | `DefaultToolbar` | Tool picker. Two opt-in creation flows — see below. |
 | `bottomRight` | `DefaultZoomWidget` | − / % / +. The percentage is clickable and snaps to 100%. |
 | `center` | `DefaultEmptyHint` | Localized "click to add a note" hint that self-suppresses once any shape exists. |
 
 For each: omit the key → default renders, pass `null` → slot is suppressed,
 pass any value → that value renders. `hideUI` short-circuits all three.
+
+#### `DefaultToolbar` props
+
+Both default `false`/`true` and are wholly owned by the toolbar — the board
+itself stays agnostic so a custom toolbar can implement its own policy.
+
+| Prop | Default | What it does |
+| --- | --- | --- |
+| `dragToCreate` | `true` | Press a kind button and drag onto the canvas to create the shape at the release point. A pure tap still sets the tool (two-step flow stays intact). |
+| `clickToCreate` | `false` | Click a kind button to immediately spawn the shape at the viewport center (snap-to-grid still applies). The button becomes a one-shot spawner — no active state, no `dragToCreate`. |
+
+```tsx
+import { CasmaBoard, DefaultToolbar } from '@casmadev/board';
+
+<CasmaBoard
+  slots={{ bottomCenter: <DefaultToolbar clickToCreate /> }}
+/>
+```
 
 Custom slot content can drive the board via the `useCasmaBoard()` hook:
 

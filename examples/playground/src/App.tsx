@@ -142,6 +142,10 @@ interface DemoControlsProps {
   setUseCustomToolbar: (next: boolean) => void;
   useCustomContextMenu: boolean;
   setUseCustomContextMenu: (next: boolean) => void;
+  dragToCreate: boolean;
+  setDragToCreate: (next: boolean) => void;
+  clickToCreate: boolean;
+  setClickToCreate: (next: boolean) => void;
   depth3d: number;
   setDepth3d: (next: number) => void;
 }
@@ -163,6 +167,10 @@ function DemoControlsPanel({
   setUseCustomToolbar,
   useCustomContextMenu,
   setUseCustomContextMenu,
+  dragToCreate,
+  setDragToCreate,
+  clickToCreate,
+  setClickToCreate,
   depth3d,
   setDepth3d,
 }: DemoControlsProps) {
@@ -262,6 +270,23 @@ function DemoControlsPanel({
           onChange={(e) => setUseCustomContextMenu(e.target.checked)}
         />
         Custom ctx menu
+      </label>
+      <label style={checkRowStyle}>
+        <input
+          type="checkbox"
+          checked={dragToCreate}
+          onChange={(e) => setDragToCreate(e.target.checked)}
+          disabled={clickToCreate}
+        />
+        Drag-to-create
+      </label>
+      <label style={checkRowStyle}>
+        <input
+          type="checkbox"
+          checked={clickToCreate}
+          onChange={(e) => setClickToCreate(e.target.checked)}
+        />
+        Click-to-create (spawns at center)
       </label>
       <label style={{ ...rowStyle, alignItems: 'center' }}>
         <span style={labelStyle}>
@@ -449,6 +474,8 @@ export default function App() {
   const [enableBoxes, setEnableBoxes] = useState(true);
   const [useCustomContextMenu, setUseCustomContextMenu] = useState(false);
   const [useCustomToolbar, setUseCustomToolbar] = useState(false);
+  const [dragToCreate, setDragToCreate] = useState(true);
+  const [clickToCreate, setClickToCreate] = useState(false);
 
   const messages = useMemo(() => LOCALES[locale], [locale]);
 
@@ -488,36 +515,43 @@ export default function App() {
               setUseCustomToolbar={setUseCustomToolbar}
               useCustomContextMenu={useCustomContextMenu}
               setUseCustomContextMenu={setUseCustomContextMenu}
+              dragToCreate={dragToCreate}
+              setDragToCreate={setDragToCreate}
+              clickToCreate={clickToCreate}
+              setClickToCreate={setClickToCreate}
               depth3d={depth3d}
               setDepth3d={setDepth3d}
             />
           ),
           bottomLeft: <SelectionInspector />,
           // bottomRight omitted → DefaultZoomWidget (package default).
-          // bottomCenter omitted → DefaultToolbar. Override only when the
-          // checkbox is on, to demonstrate replacing the default.
-          ...(useCustomToolbar
-            ? {
-                bottomCenter: (
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      gap: 8,
-                      padding: 6,
-                      background: '#1a1a1a',
-                      color: 'white',
-                      borderRadius: 8,
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span style={{ fontSize: 12, paddingInlineStart: 6 }}>
-                      custom
-                    </span>
-                    <DefaultToolbar />
-                  </div>
-                ),
-              }
-            : null),
+          // Always override bottomCenter so we can pass the toolbar props
+          // from the demo panel. When `useCustomToolbar` is on, wrap it in
+          // the dark chrome to demonstrate the slot accepting any node.
+          bottomCenter: useCustomToolbar ? (
+            <div
+              style={{
+                display: 'inline-flex',
+                gap: 8,
+                padding: 6,
+                background: '#1a1a1a',
+                color: 'white',
+                borderRadius: 8,
+                alignItems: 'center',
+              }}
+            >
+              <span style={{ fontSize: 12, paddingInlineStart: 6 }}>custom</span>
+              <DefaultToolbar
+                dragToCreate={dragToCreate}
+                clickToCreate={clickToCreate}
+              />
+            </div>
+          ) : (
+            <DefaultToolbar
+              dragToCreate={dragToCreate}
+              clickToCreate={clickToCreate}
+            />
+          ),
         }}
       />
     </div>

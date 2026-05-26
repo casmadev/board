@@ -30,7 +30,7 @@
   --cb-sticky-shadow-blur-lifted: 5px;
   --cb-sticky-shadow-offset-lifted: 28px;
   --cb-sticky-shadow-inset-lifted: 0px;
-  --cb-sticky-shadow-depth-lifted: -64px;
+  --cb-sticky-shadow-depth-lifted: -60px;
   /* Subtle contact shadow on the sticky itself — simulates the ambient
      occlusion where the note meets the board. Stacked with the selection
      ring when selected/editing (see .cb-sticky.cb-shape--selected). */
@@ -167,6 +167,15 @@
   cursor: grabbing;
 }
 
+/* Preview: rendered inside .cb-world while a drag-from-toolbar gesture is
+   in flight. Semi-transparent so the cursor and underlying canvas read
+   through; inert to pointer events so nothing in the preview intercepts
+   the still-active gesture. */
+.cb-shape--preview {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 /* Sticky note — extends .cb-shape with surface chrome and a top-pivot
    transform origin for the wobble + edit-lift animation. The contact
    shadow is a subtle outward box-shadow that simulates ambient occlusion
@@ -206,6 +215,13 @@
 .cb-sticky--blue   { background: var(--cb-sticky-blue); }
 .cb-sticky--green  { background: var(--cb-sticky-green); }
 .cb-sticky--purple { background: var(--cb-sticky-purple); }
+
+/* In preview mode (drag-from-toolbar ghost), zero out the ::after drop
+   shadow by overriding the color var to transparent. The contact shadow
+   on the sticky itself stays; only the cast shadow goes away. */
+.cb-sticky.cb-shape--preview {
+  --cb-sticky-shadow-color: transparent;
+}
 
 /* Drop shadow painted as a pseudo-element. Counter-rotates the parent's
    X tilt (mirrored from JS into --cb-sticky-tilt-x) so the shadow lies

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CasmaBoard } from '../src/CasmaBoard';
+import { DefaultToolbar } from '../src/components/DefaultToolbar';
 import { useCasmaBoard } from '../src/context';
 import { stickyKind } from '../src/kinds/sticky';
 import type { ShapeKind, ShapeRenderProps, StickyShape } from '../src/types';
@@ -205,6 +206,187 @@ describe('CasmaBoard customization', () => {
       render(<CasmaBoard shapeKinds={[stickyKind, boxKind]} />);
       expect(screen.getByRole('button', { name: /sticky note/i })).toBeInTheDocument();
       expect(screen.getByTestId('box-icon')).toBeInTheDocument();
+    });
+
+    it('creates a shape when the user drags from the toolbar onto the canvas', async () => {
+      render(<CasmaBoard shapeKinds={[boxKind]} />);
+      const toolBtn = screen.getByRole('button', { name: 'Box' });
+      // The viewport is whatever cb-viewport sits behind the toolbar.
+      const viewport = document.querySelector('.cb-viewport') as HTMLElement;
+      // Stub viewport bounds — jsdom gives every element a 0×0 rect, which
+      // would make "released over viewport" always false. Pretending it's
+      // a 1000×800 region at (0,0) is enough for the gesture math.
+      viewport.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800,
+          x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+
+      const user = userEvent.setup();
+      // pointerdown on the toolbar button → setTool + start tracking.
+      await user.pointer({ keys: '[MouseLeft>]', target: toolBtn });
+      expect(document.querySelector('[data-shape-id]')).toBeNull(); // no shape yet
+      // Drag past the 4px threshold and over the viewport, then release.
+      await user.pointer({ coords: { x: 400, y: 300 } });
+      await user.pointer({ keys: '[/MouseLeft]', coords: { x: 400, y: 300 } });
+
+      const box = document.querySelector('[data-shape-id]') as HTMLElement;
+      expect(box).not.toBeNull();
+      // boxKind centers the shape on the world point (x − w/2, y − h/2)
+      // with w=80, h=60. Release at (400, 300) → box at (360, 270).
+      expect(box.style.left).toBe('360px');
+      expect(box.style.top).toBe('270px');
+    });
+
+    it('does not create a shape when a toolbar tap is released without drag', async () => {
+      render(<CasmaBoard shapeKinds={[boxKind]} />);
+      const toolBtn = screen.getByRole('button', { name: 'Box' });
+      const user = userEvent.setup();
+      // Tap (no movement past threshold) — should only set the tool.
+      await user.pointer({ keys: '[MouseLeft>]', target: toolBtn });
+      await user.pointer({ keys: '[/MouseLeft]', target: toolBtn });
+      expect(document.querySelector('[data-shape-id]')).toBeNull();
+      // And the tool is now Box; aria-pressed reflects it.
+      expect(toolBtn.getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('DefaultToolbar `clickToCreate` spawns a shape at the viewport center on click', async () => {
+      render(
+        <CasmaBoard
+          shapeKinds={[boxKind]}
+          slots={{ bottomCenter: <DefaultToolbar clickToCreate /> }}
+        />,
+      );
+      const viewport = document.querySelector('.cb-viewport') as HTMLElement;
+      // Stub viewport to a known 1000×800 rect at the origin.
+      viewport.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800,
+          x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      const toolBtn = screen.getByRole('button', { name: 'Box' });
+      // Kind button should not advertise selection state in this mode.
+      expect(toolBtn.getAttribute('aria-pressed')).toBeNull();
+
+      await userEvent.setup().click(toolBtn);
+
+      const box = document.querySelector('[data-shape-id]') as HTMLElement;
+      expect(box).not.toBeNull();
+      // Viewport center is (500, 400). boxKind centers (80, 60) on the
+      // world point → (500 − 40, 400 − 30) = (460, 370). Camera is at the
+      // identity so screen == world.
+      expect(box.style.left).toBe('460px');
+      expect(box.style.top).toBe('370px');
+    });
+
+    it('renders a preview shape under the cursor during drag-from-toolbar', async () => {
+      // stickyKind spreads the board-provided className onto its root, so
+      // the cb-shape--preview modifier (which paints the 40% opacity) lands
+      // on the rendered element. The playground BoxRenderer in this file
+      // intentionally doesn't apply className, so it's the wrong fixture
+      // for this test.
+      render(<CasmaBoard />); // defaults to [stickyKind]
+      const viewport = document.querySelector('.cb-viewport') as HTMLElement;
+      viewport.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800,
+          x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      const toolBtn = screen.getByRole('button', { name: /sticky note/i });
+
+      const user = userEvent.setup();
+      await user.pointer({ keys: '[MouseLeft>]', target: toolBtn });
+      await user.pointer({ coords: { x: 400, y: 300 } });
+
+      const preview = document.querySelector('.cb-shape--preview') as HTMLElement;
+      expect(preview).not.toBeNull();
+      // Position tracks the cursor. Sticky is centered on the world point
+      // (x − w/2, y − h/2) with the default 192×192 size, so a release at
+      // world (400, 300) puts the shape at (304, 204).
+      expect(preview.style.left).toBe('304px');
+      expect(preview.style.top).toBe('204px');
+      // No real shape on the board yet (preview ≠ committed).
+      const realShapes = Array.from(
+        document.querySelectorAll('[data-shape-id]'),
+      ).filter((el) => !el.classList.contains('cb-shape--preview'));
+      expect(realShapes.length).toBe(0);
+
+      // Release over the viewport → commit. Preview clears, real shape lands.
+      await user.pointer({ keys: '[/MouseLeft]', coords: { x: 400, y: 300 } });
+      expect(document.querySelector('.cb-shape--preview')).toBeNull();
+      const committed = document.querySelector('[data-shape-id]') as HTMLElement;
+      expect(committed).not.toBeNull();
+      expect(committed.style.left).toBe('304px');
+      expect(committed.style.top).toBe('204px');
+    });
+
+    it('cancels the drag-from-toolbar gesture on Escape (no shape created)', async () => {
+      render(<CasmaBoard />);
+      const viewport = document.querySelector('.cb-viewport') as HTMLElement;
+      viewport.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800,
+          x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      const toolBtn = screen.getByRole('button', { name: /sticky note/i });
+
+      const user = userEvent.setup();
+      await user.pointer({ keys: '[MouseLeft>]', target: toolBtn });
+      await user.pointer({ coords: { x: 400, y: 300 } });
+      expect(document.querySelector('.cb-shape--preview')).not.toBeNull();
+
+      await user.keyboard('{Escape}');
+      expect(document.querySelector('.cb-shape--preview')).toBeNull();
+      // Release left so userEvent's internal pointer state stays balanced.
+      await user.pointer({ keys: '[/MouseLeft]', coords: { x: 400, y: 300 } });
+      expect(document.querySelector('[data-shape-id]')).toBeNull();
+    });
+
+    it('cancels the drag-from-toolbar gesture on right-click (no shape created)', async () => {
+      render(<CasmaBoard />);
+      const viewport = document.querySelector('.cb-viewport') as HTMLElement;
+      viewport.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800,
+          x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      const toolBtn = screen.getByRole('button', { name: /sticky note/i });
+
+      const user = userEvent.setup();
+      await user.pointer({ keys: '[MouseLeft>]', target: toolBtn });
+      await user.pointer({ coords: { x: 400, y: 300 } });
+      expect(document.querySelector('.cb-shape--preview')).not.toBeNull();
+
+      // Right-click while holding left → cancel. jsdom doesn't expose
+      // `PointerEvent` globally, but the handler only reads MouseEvent
+      // fields (button / clientX / clientY) so a MouseEvent dispatched
+      // under the 'pointerdown' type fires the listener correctly. Wrap
+      // in act() so the React state update from setDragPreview(null)
+      // commits before the assertion below.
+      act(() => {
+        document.dispatchEvent(new MouseEvent('pointerdown', {
+          bubbles: true, cancelable: true,
+          button: 2, buttons: 3,
+          clientX: 400, clientY: 300,
+        }));
+      });
+      expect(document.querySelector('.cb-shape--preview')).toBeNull();
+      await user.pointer({ keys: '[/MouseLeft]', coords: { x: 400, y: 300 } });
+      expect(document.querySelector('[data-shape-id]')).toBeNull();
+    });
+
+    it('DefaultToolbar `dragToCreate={false}` disables the drag-from-toolbar shortcut', async () => {
+      render(
+        <CasmaBoard
+          shapeKinds={[boxKind]}
+          slots={{ bottomCenter: <DefaultToolbar dragToCreate={false} /> }}
+        />,
+      );
+      const viewport = document.querySelector('.cb-viewport') as HTMLElement;
+      viewport.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800,
+          x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      const toolBtn = screen.getByRole('button', { name: 'Box' });
+
+      const user = userEvent.setup();
+      await user.pointer({ keys: '[MouseLeft>]', target: toolBtn });
+      await user.pointer({ coords: { x: 400, y: 300 } });
+      await user.pointer({ keys: '[/MouseLeft]', coords: { x: 400, y: 300 } });
+
+      // Drag is a no-op when the prop is off; no shape was created. The
+      // tap still selected the tool (existing two-step flow intact).
+      expect(document.querySelector('[data-shape-id]')).toBeNull();
+      expect(toolBtn.getAttribute('aria-pressed')).toBe('true');
     });
 
     it('passes a cb-shape className that reflects selected / dragging state', async () => {
