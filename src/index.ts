@@ -16,6 +16,11 @@ export { defaultShapeKinds, stickyKind, StickyNote, StickyIcon } from './kinds';
 // Context — for custom slot UI to read live board state.
 export { BoardContext, useCasmaBoard } from './context';
 
+// Hook for any custom UI that wants the same drag-from-element-to-canvas
+// gesture DefaultToolbar uses (preview, snap, ESC + right-click cancel).
+export { useShapeCreationDrag } from './hooks/useShapeCreationDrag';
+export type { ShapeCreationDragOptions } from './hooks/useShapeCreationDrag';
+
 // Constants the average consumer is likely to need.
 export {
   STICKY_COLORS,

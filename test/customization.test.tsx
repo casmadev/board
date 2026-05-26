@@ -365,6 +365,52 @@ describe('CasmaBoard customization', () => {
       expect(document.querySelector('[data-shape-id]')).toBeNull();
     });
 
+    it('DefaultToolbar supports `clickToCreate` + `dragToCreate` simultaneously', async () => {
+      // stickyKind spreads the board-provided className onto its root, so
+      // the preview's `cb-shape--preview` modifier is observable. The
+      // boxKind fixture in this file doesn't apply className, which would
+      // make the preview invisible to a querySelector.
+      render(
+        <CasmaBoard
+          slots={{
+            bottomCenter: <DefaultToolbar clickToCreate dragToCreate />,
+          }}
+        />,
+      );
+      const viewport = document.querySelector('.cb-viewport') as HTMLElement;
+      viewport.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800,
+          x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      const toolBtn = screen.getByRole('button', { name: /sticky note/i });
+      // No active state — click-to-create makes the button a one-shot
+      // spawner, not a tool selector.
+      expect(toolBtn.getAttribute('aria-pressed')).toBeNull();
+
+      const user = userEvent.setup();
+      // 1. A tap goes through onClick → spawnAtViewportCenter. Sticky is
+      //    192×192, viewport center is (500, 400), so the sticky lands at
+      //    (500 − 96, 400 − 96) = (404, 304).
+      await user.click(toolBtn);
+      const first = document.querySelector('[data-shape-id]') as HTMLElement;
+      expect(first).not.toBeNull();
+      expect(first.style.left).toBe('404px');
+      expect(first.style.top).toBe('304px');
+
+      // 2. Press + drag past the threshold → the drag gesture is wired
+      //    even with click-to-create on, so a preview appears under the
+      //    cursor. We assert the preview rather than the committed shape
+      //    because userEvent.pointer fires a synthetic click on the
+      //    down-target after release, which a real browser wouldn't do —
+      //    that would inflate the spawned-shape count in this test.
+      await user.pointer({ keys: '[MouseLeft>]', target: toolBtn });
+      await user.pointer({ coords: { x: 200, y: 200 } });
+      expect(document.querySelector('.cb-shape--preview')).not.toBeNull();
+      // Cancel cleanly so the test state stays balanced.
+      await user.keyboard('{Escape}');
+      await user.pointer({ keys: '[/MouseLeft]', coords: { x: 200, y: 200 } });
+      expect(document.querySelector('.cb-shape--preview')).toBeNull();
+    });
+
     it('DefaultToolbar `dragToCreate={false}` disables the drag-from-toolbar shortcut', async () => {
       render(
         <CasmaBoard

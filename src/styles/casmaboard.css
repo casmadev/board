@@ -406,11 +406,13 @@
 
 /* Floating context menu — anchored under the selected shape; left/top come
    from worldToScreen, translateX(-50%) centers horizontally. Lives at the
-   viewport root, not in a slot, because its position is dynamic. */
+   .cb-root level (sibling of .cb-viewport), not inside a slot, because
+   its position is dynamic. z-index 4 puts it above the slot row (z 3) so
+   toolbars/zoom-widgets can't obscure it. */
 .cb-context-menu {
   position: absolute;
   transform: translateX(-50%);
-  z-index: 3;
+  z-index: 4;
   white-space: nowrap;
 }
 

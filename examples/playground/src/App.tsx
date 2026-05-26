@@ -1,123 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   CasmaBoard,
   DefaultToolbar,
-  defaultShapeKinds,
+  GRID_SIZE,
+  STICKY_COLORS,
+  createStickyShape,
+  screenToWorld,
+  stickyKind,
   useCasmaBoard,
-  worldToScreen,
+  useShapeCreationDrag,
 } from '@casmadev/board';
 import type {
   BackgroundStyle,
-  Direction,
-  Messages,
-  ShapeKind,
-  ShapeRenderProps,
-  Shape,
+  StickyColor,
   TextOverflow,
 } from '@casmadev/board';
-import {
-  en,
-  es,
-  fr,
-  ptBR,
-  de,
-  ja,
-  ar,
-  he,
-} from '@casmadev/board/locales';
 import '@casmadev/board/styles.css';
-
-const LOCALES: Record<string, Messages> = { en, es, fr, 'pt-BR': ptBR, de, ja, ar, he };
-const RTL_LOCALES = new Set(['ar', 'he']);
-
-/* ------------------------------------------------------------------ */
-/* Demo: a custom shape kind — a colored box with an inline label.    */
-/* ------------------------------------------------------------------ */
-
-interface BoxShape {
-  id: string;
-  type: 'box';
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  label: string;
-  hue: number;
-}
-
-function BoxRenderer({
-  shape,
-  pointerHandlers,
-  onSelect,
-  className,
-}: ShapeRenderProps<BoxShape>) {
-  // Spreading `className` opts the box into the shared cb-shape baseline
-  // (position, cursor, transition) plus the selection ring + grabbing
-  // cursor while dragging — no per-shape state styling needed here.
-  return (
-    <div
-      className={className}
-      data-shape-id={shape.id}
-      style={{
-        left: shape.x,
-        top: shape.y,
-        width: shape.w,
-        height: shape.h,
-        background: `hsl(${shape.hue} 75% 55%)`,
-        border: '2px solid rgba(0,0,0,0.15)',
-        borderRadius: 6,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'white',
-        fontWeight: 600,
-        // Resting drop shadow via filter so we don't clash with the
-        // class-based selection ring (which uses box-shadow). Sticky
-        // sidesteps the same problem by painting its shadow on ::after.
-        filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.18))',
-        userSelect: 'none',
-      }}
-      onFocus={onSelect}
-      tabIndex={0}
-      {...pointerHandlers}
-    >
-      {shape.label}
-    </div>
-  );
-}
-
-const boxKind: ShapeKind<BoxShape> = {
-  type: 'box',
-  defaultSize: { w: 140, h: 80 },
-  create: (id, x, y) => ({
-    id,
-    type: 'box',
-    x: x - 70,
-    y: y - 40,
-    w: 140,
-    h: 80,
-    label: 'Box',
-    hue: Math.floor(Math.random() * 360),
-  }),
-  Component: BoxRenderer,
-  toolButton: {
-    icon: (
-      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden>
-        <rect
-          x="3"
-          y="5"
-          width="14"
-          height="10"
-          rx="1"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-        />
-      </svg>
-    ),
-    label: 'Box',
-  },
-};
+import './fan-toolbar.css';
 
 /* ------------------------------------------------------------------ */
 /* Demo controls — lifted out of the old page header so the page is   */
@@ -125,52 +24,32 @@ const boxKind: ShapeKind<BoxShape> = {
 /* state is owned by App and threaded through props.                  */
 /* ------------------------------------------------------------------ */
 
+type ToolbarVariant = 'default' | 'wrapped' | 'fan';
+
 interface DemoControlsProps {
-  locale: keyof typeof LOCALES;
-  setLocale: (next: keyof typeof LOCALES) => void;
-  direction: Direction;
-  setDirection: (next: Direction) => void;
   textOverflow: TextOverflow;
   setTextOverflow: (next: TextOverflow) => void;
   background: BackgroundStyle;
   setBackground: (next: BackgroundStyle) => void;
   snapToGrid: boolean;
   setSnapToGrid: (next: boolean) => void;
-  enableBoxes: boolean;
-  setEnableBoxes: (next: boolean) => void;
-  useCustomToolbar: boolean;
-  setUseCustomToolbar: (next: boolean) => void;
-  useCustomContextMenu: boolean;
-  setUseCustomContextMenu: (next: boolean) => void;
-  dragToCreate: boolean;
-  setDragToCreate: (next: boolean) => void;
-  clickToCreate: boolean;
-  setClickToCreate: (next: boolean) => void;
+  toolbarVariant: ToolbarVariant;
+  setToolbarVariant: (next: ToolbarVariant) => void;
   depth3d: number;
   setDepth3d: (next: number) => void;
 }
 
+const BACKGROUNDS: BackgroundStyle[] = ['dots', 'grid', 'none'];
+
 function DemoControlsPanel({
-  locale,
-  setLocale,
-  direction,
-  setDirection,
   textOverflow,
   setTextOverflow,
   background,
   setBackground,
   snapToGrid,
   setSnapToGrid,
-  enableBoxes,
-  setEnableBoxes,
-  useCustomToolbar,
-  setUseCustomToolbar,
-  useCustomContextMenu,
-  setUseCustomContextMenu,
-  dragToCreate,
-  setDragToCreate,
-  clickToCreate,
-  setClickToCreate,
+  toolbarVariant,
+  setToolbarVariant,
   depth3d,
   setDepth3d,
 }: DemoControlsProps) {
@@ -191,33 +70,20 @@ function DemoControlsPanel({
         overflowY: 'auto',
       }}
     >
-      <label style={rowStyle}>
-        <span style={labelStyle}>Locale</span>
-        <select
-          value={locale}
-          onChange={(e) => {
-            const next = e.target.value as keyof typeof LOCALES;
-            setLocale(next);
-            setDirection(RTL_LOCALES.has(next) ? 'rtl' : 'ltr');
-          }}
-        >
-          {Object.keys(LOCALES).map((code) => (
-            <option key={code} value={code}>
-              {code}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label style={rowStyle}>
-        <span style={labelStyle}>Direction</span>
-        <select
-          value={direction}
-          onChange={(e) => setDirection(e.target.value as Direction)}
-        >
-          <option value="ltr">ltr</option>
-          <option value="rtl">rtl</option>
-        </select>
-      </label>
+      <h2
+        style={{
+          margin: 0,
+          fontSize: 13,
+          fontWeight: 600,
+          letterSpacing: 0.2,
+          color: 'rgba(0,0,0,0.7)',
+          textTransform: 'uppercase',
+          paddingBottom: 4,
+          borderBottom: '1px solid rgba(0,0,0,0.08)',
+        }}
+      >
+        Demo parameters
+      </h2>
       <label style={rowStyle}>
         <span style={labelStyle}>Text overflow</span>
         <select
@@ -228,17 +94,23 @@ function DemoControlsPanel({
           <option value="truncate">truncate</option>
         </select>
       </label>
-      <label style={rowStyle}>
-        <span style={labelStyle}>Background</span>
-        <select
-          value={background}
-          onChange={(e) => setBackground(e.target.value as BackgroundStyle)}
-        >
-          <option value="dots">dots</option>
-          <option value="grid">grid</option>
-          <option value="none">none</option>
-        </select>
-      </label>
+      <fieldset style={fieldsetStyle}>
+        <legend style={labelStyle}>Background</legend>
+        <div style={{ display: 'inline-flex', gap: 10 }}>
+          {BACKGROUNDS.map((bg) => (
+            <label key={bg} style={checkRowStyle}>
+              <input
+                type="radio"
+                name="background"
+                value={bg}
+                checked={background === bg}
+                onChange={() => setBackground(bg)}
+              />
+              {bg}
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <label style={checkRowStyle}>
         <input
           type="checkbox"
@@ -247,46 +119,16 @@ function DemoControlsPanel({
         />
         Snap to grid
       </label>
-      <label style={checkRowStyle}>
-        <input
-          type="checkbox"
-          checked={enableBoxes}
-          onChange={(e) => setEnableBoxes(e.target.checked)}
-        />
-        Box kind
-      </label>
-      <label style={checkRowStyle}>
-        <input
-          type="checkbox"
-          checked={useCustomToolbar}
-          onChange={(e) => setUseCustomToolbar(e.target.checked)}
-        />
-        Custom toolbar
-      </label>
-      <label style={checkRowStyle}>
-        <input
-          type="checkbox"
-          checked={useCustomContextMenu}
-          onChange={(e) => setUseCustomContextMenu(e.target.checked)}
-        />
-        Custom ctx menu
-      </label>
-      <label style={checkRowStyle}>
-        <input
-          type="checkbox"
-          checked={dragToCreate}
-          onChange={(e) => setDragToCreate(e.target.checked)}
-          disabled={clickToCreate}
-        />
-        Drag-to-create
-      </label>
-      <label style={checkRowStyle}>
-        <input
-          type="checkbox"
-          checked={clickToCreate}
-          onChange={(e) => setClickToCreate(e.target.checked)}
-        />
-        Click-to-create (spawns at center)
+      <label style={rowStyle}>
+        <span style={labelStyle}>Toolbar</span>
+        <select
+          value={toolbarVariant}
+          onChange={(e) => setToolbarVariant(e.target.value as ToolbarVariant)}
+        >
+          <option value="default">Default — tool picker</option>
+          <option value="wrapped">Default in dark chrome (wrapped)</option>
+          <option value="fan">Sticky color fan</option>
+        </select>
       </label>
       <label style={{ ...rowStyle, alignItems: 'center' }}>
         <span style={labelStyle}>
@@ -332,6 +174,15 @@ const checkRowStyle: React.CSSProperties = {
   gap: 6,
 };
 
+const fieldsetStyle: React.CSSProperties = {
+  border: 'none',
+  padding: 0,
+  margin: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+};
+
 const miniBtn: React.CSSProperties = {
   appearance: 'none',
   border: '1px solid rgba(0,0,0,0.1)',
@@ -374,6 +225,99 @@ function TitleChip() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Sticky fan toolbar — custom bottomCenter slot demo. Five big       */
+/* color-coded sticky-note buttons fanned out in an arc. Clicking a   */
+/* button spawns a sticky of that color at the viewport center;       */
+/* pressing and dragging onto the canvas spawns at the drop point     */
+/* (reuses the package's useShapeCreationDrag hook for preview +      */
+/* cancel). No Select button, no tool state — the buttons are pure    */
+/* spawners.                                                          */
+/* ------------------------------------------------------------------ */
+
+function StickyFanToolbar() {
+  const {
+    addShape,
+    setSelectedId,
+    setTool,
+    viewportRef,
+    camera,
+    generateId,
+    snapToGrid,
+  } = useCasmaBoard();
+  const startDrag = useShapeCreationDrag();
+
+  const spawn = (color: StickyColor) => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    // Spawn at the visible viewport center, then snap if the board's
+    // snap-to-grid prop is on. We bypass createShapeWithTool because that
+    // helper always uses the default sticky color; here we want per-button
+    // colors so we call createStickyShape directly with a color override.
+    const world = screenToWorld(camera, {
+      x: rect.width / 2,
+      y: rect.height / 2,
+    });
+    const shape = createStickyShape(generateId(), world.x, world.y, { color });
+    if (snapToGrid) {
+      shape.x = Math.round(shape.x / GRID_SIZE) * GRID_SIZE;
+      shape.y = Math.round(shape.y / GRID_SIZE) * GRID_SIZE;
+    }
+    addShape(shape);
+    setSelectedId(shape.id);
+    setTool('select');
+  };
+
+  const onButtonPointerDown =
+    (color: StickyColor) => (e: React.PointerEvent<HTMLButtonElement>) => {
+      startDrag(e, {
+        createInitialShape: (world) => ({
+          kind: stickyKind,
+          shape: createStickyShape(generateId(), world.x, world.y, { color }),
+        }),
+      });
+    };
+
+  return (
+    <div
+      className="fan-toolbar"
+      role="toolbar"
+      // Stop pointerdown bubbling so the viewport doesn't deselect when
+      // the user presses on a button (existing toolbar convention).
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {STICKY_COLORS.map((color, i) => {
+        // Fan around a virtual pivot ARC_RADIUS px below the bottom of
+        // each button. Each button rotates by its own angle around its
+        // own bottom-center; the matching `rise = R(1 − cos angle)`
+        // pushes outer buttons down so all bottoms land on the shared
+        // circular arc — what makes the fan read as a true curve
+        // rather than as separately-tilted rectangles.
+        const ANGLE_STEP = 7;
+        const ARC_RADIUS = 520;
+        const angle = (i - (STICKY_COLORS.length - 1) / 2) * ANGLE_STEP;
+        const rise = ARC_RADIUS * (1 - Math.cos((angle * Math.PI) / 180));
+        return (
+          <button
+            key={color}
+            type="button"
+            className={`fan-toolbar__btn fan-toolbar__btn--${color}`}
+            style={{
+              ['--angle' as string]: `${angle}deg`,
+              ['--rise' as string]: `${rise.toFixed(2)}px`,
+            } as React.CSSProperties}
+            aria-label={`New ${color} sticky`}
+            title={`New ${color} sticky`}
+            onClick={() => spawn(color)}
+            onPointerDown={onButtonPointerDown(color)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Bottom-right: deselect button + selection summary.                 */
 /* ------------------------------------------------------------------ */
 
@@ -405,153 +349,67 @@ function SelectionInspector() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Custom context menu: replaces DefaultContextMenu globally.         */
-/* Switches on shape.type to do something meaningful for each kind.   */
-/* ------------------------------------------------------------------ */
-
-function customContextMenu({
-  shape,
-  camera,
-  patch,
-  remove,
-}: {
-  shape: Shape;
-  camera: { x: number; y: number; zoom: number };
-  patch: (next: Partial<Shape>) => void;
-  remove: () => void;
-}) {
-  const pos = worldToScreen(camera, {
-    x: shape.x + shape.w / 2,
-    y: shape.y + shape.h,
-  });
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: pos.x,
-        top: pos.y + 14,
-        transform: 'translateX(-50%)',
-        zIndex: 3,
-        background: 'white',
-        border: '1px solid rgba(0,0,0,0.1)',
-        borderRadius: 10,
-        padding: '6px 8px',
-        boxShadow: '0 6px 18px rgba(0,0,0,0.1)',
-        display: 'inline-flex',
-        gap: 6,
-        alignItems: 'center',
-        fontSize: 12,
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      <span style={{ color: 'rgba(0,0,0,0.55)' }}>{shape.type}</span>
-      {shape.type === 'box' && (
-        <button
-          style={miniBtn}
-          onClick={() => patch({ hue: Math.floor(Math.random() * 360) } as Partial<Shape>)}
-        >
-          🎨
-        </button>
-      )}
-      <button style={{ ...miniBtn, color: '#dc2626' }} onClick={remove}>
-        🗑
-      </button>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* App                                                                */
 /* ------------------------------------------------------------------ */
 
 export default function App() {
-  const [locale, setLocale] = useState<keyof typeof LOCALES>('en');
-  const [direction, setDirection] = useState<Direction>('ltr');
   const [textOverflow, setTextOverflow] = useState<TextOverflow>('shrink-to-fit');
   const [depth3d, setDepth3d] = useState(800);
   const [background, setBackground] = useState<BackgroundStyle>('dots');
   const [snapToGrid, setSnapToGrid] = useState(false);
-  const [enableBoxes, setEnableBoxes] = useState(true);
-  const [useCustomContextMenu, setUseCustomContextMenu] = useState(false);
-  const [useCustomToolbar, setUseCustomToolbar] = useState(false);
-  const [dragToCreate, setDragToCreate] = useState(true);
-  const [clickToCreate, setClickToCreate] = useState(false);
-
-  const messages = useMemo(() => LOCALES[locale], [locale]);
-
-  const shapeKinds = useMemo<ShapeKind<any>[]>(
-    () => (enableBoxes ? [...defaultShapeKinds, boxKind] : defaultShapeKinds),
-    [enableBoxes],
-  );
+  const [toolbarVariant, setToolbarVariant] = useState<ToolbarVariant>('default');
 
   return (
     <div style={{ height: '100%' }}>
       <CasmaBoard
-        messages={messages}
-        direction={direction}
         textOverflow={textOverflow}
         depth3d={depth3d}
         background={background}
         snapToGrid={snapToGrid}
-        shapeKinds={shapeKinds}
-        contextMenu={useCustomContextMenu ? customContextMenu : undefined}
         slots={{
           topLeft: <TitleChip />,
           topRight: (
             <DemoControlsPanel
-              locale={locale}
-              setLocale={setLocale}
-              direction={direction}
-              setDirection={setDirection}
               textOverflow={textOverflow}
               setTextOverflow={setTextOverflow}
               background={background}
               setBackground={setBackground}
               snapToGrid={snapToGrid}
               setSnapToGrid={setSnapToGrid}
-              enableBoxes={enableBoxes}
-              setEnableBoxes={setEnableBoxes}
-              useCustomToolbar={useCustomToolbar}
-              setUseCustomToolbar={setUseCustomToolbar}
-              useCustomContextMenu={useCustomContextMenu}
-              setUseCustomContextMenu={setUseCustomContextMenu}
-              dragToCreate={dragToCreate}
-              setDragToCreate={setDragToCreate}
-              clickToCreate={clickToCreate}
-              setClickToCreate={setClickToCreate}
+              toolbarVariant={toolbarVariant}
+              setToolbarVariant={setToolbarVariant}
               depth3d={depth3d}
               setDepth3d={setDepth3d}
             />
           ),
           bottomLeft: <SelectionInspector />,
           // bottomRight omitted → DefaultZoomWidget (package default).
-          // Always override bottomCenter so we can pass the toolbar props
-          // from the demo panel. When `useCustomToolbar` is on, wrap it in
-          // the dark chrome to demonstrate the slot accepting any node.
-          bottomCenter: useCustomToolbar ? (
-            <div
-              style={{
-                display: 'inline-flex',
-                gap: 8,
-                padding: 6,
-                background: '#1a1a1a',
-                color: 'white',
-                borderRadius: 8,
-                alignItems: 'center',
-              }}
-            >
-              <span style={{ fontSize: 12, paddingInlineStart: 6 }}>custom</span>
-              <DefaultToolbar
-                dragToCreate={dragToCreate}
-                clickToCreate={clickToCreate}
-              />
-            </div>
-          ) : (
-            <DefaultToolbar
-              dragToCreate={dragToCreate}
-              clickToCreate={clickToCreate}
-            />
-          ),
+          // Each variant owns its own creation-flow policy: DefaultToolbar
+          // uses its defaults; the wrapped variant just adds dark chrome
+          // around it; the fan toolbar handles click + drag internally.
+          bottomCenter:
+            toolbarVariant === 'fan' ? (
+              <StickyFanToolbar />
+            ) : toolbarVariant === 'wrapped' ? (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  gap: 8,
+                  padding: 6,
+                  background: '#1a1a1a',
+                  color: 'white',
+                  borderRadius: 8,
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ fontSize: 12, paddingInlineStart: 6 }}>
+                  custom
+                </span>
+                <DefaultToolbar />
+              </div>
+            ) : (
+              <DefaultToolbar />
+            ),
         }}
       />
     </div>

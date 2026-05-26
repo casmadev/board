@@ -1,0 +1,65 @@
+/* Playground-only styles for the sticky-note fan toolbar — illustrates how
+   far a custom slot can deviate from DefaultToolbar's chrome. Uses the
+   package's sticky color vars (defined on .cb-root), so the buttons
+   theme automatically with the rest of the board. */
+
+.fan-toolbar {
+  display: inline-flex;
+  align-items: flex-end;
+  /* Space above for the hover lift; no bottom padding because the strip
+     is translated down so the buttons' bottom edges clip off the
+     viewport (see translateY below). */
+  padding-top: 28px;
+  /* Sink the strip so the buttons appear to emerge from below the
+     screen — like a hand of cards held just past the bottom edge.
+     .cb-root has overflow: hidden, so anything past it is clipped.
+     56px hides the bottom edge of the center button (≈100px of its
+     140 stays visible) while leaving the outer buttons (which sit
+     ~15px lower from --rise) with ~85px visible — still a comfortable
+     click target. */
+  transform: translateY(56px);
+}
+
+.fan-toolbar__btn {
+  appearance: none;
+  border: none;
+  padding: 0;
+  width: 100px;
+  height: 140px;
+  border-radius: 3px;
+  cursor: pointer;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.18);
+  /* Two transform inputs per button, both set inline from JS:
+       --angle  rotates the card around its own bottom-center;
+       --rise   pushes the card downward by R(1−cos angle), placing its
+                bottom on a shared circular arc (R is the virtual radius).
+     Without --rise the bottoms sit on a flat line and the fan looks
+     brittle; with --rise the bottoms trace a true smile curve. */
+  transform-origin: center bottom;
+  transform: rotate(var(--angle, 0deg)) translateY(var(--rise, 0px));
+  transition:
+    transform 320ms cubic-bezier(0.2, 0.85, 0.3, 1.05),
+    box-shadow 240ms ease-out;
+  /* Overlap adjacent buttons so the fan reads as a single bundle of
+     cards rather than a row of tilted rectangles. */
+  margin-inline-start: -22px;
+}
+.fan-toolbar__btn:first-child {
+  margin-inline-start: 0;
+}
+
+.fan-toolbar__btn:hover,
+.fan-toolbar__btn:focus-visible {
+  /* Lift relative to the rest position — subtract from rise so the lift
+     is in screen space (not radial toward the arc pivot). */
+  transform: rotate(var(--angle, 0deg)) translateY(calc(var(--rise, 0px) - 20px));
+  box-shadow: 0 22px 36px rgba(0, 0, 0, 0.24);
+  outline: none;
+  z-index: 1;
+}
+
+.fan-toolbar__btn--yellow { background: var(--cb-sticky-yellow); }
+.fan-toolbar__btn--green  { background: var(--cb-sticky-green); }
+.fan-toolbar__btn--pink   { background: var(--cb-sticky-pink); }
+.fan-toolbar__btn--blue   { background: var(--cb-sticky-blue); }
+.fan-toolbar__btn--purple { background: var(--cb-sticky-purple); }

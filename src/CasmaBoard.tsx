@@ -445,20 +445,30 @@ export function CasmaBoard(props: CasmaBoardProps) {
               );
             })()}
           </World>
-
-          {!hideUI &&
-            selectedShape &&
-            editingId !== selectedShape.id &&
-            renderContextMenu({
-              shape: selectedShape,
-              camera,
-              messages,
-              patch: (next) => patchShape(selectedShape.id, next),
-              remove: () => removeShape(selectedShape.id),
-            })}
         </div>
 
         <SlotOverlays slots={resolvedSlots} />
+
+        {/*
+          Context menu lives at the .cb-root level (sibling of the
+          viewport, after the slot row) so it can paint above the slot
+          chrome. Rendered inside the viewport it'd be trapped in the
+          viewport's stacking context (created by overflow: hidden) and
+          no z-index could lift it above .cb-slot. The menu uses
+          worldToScreen against the same camera the viewport does, and
+          .cb-root fills the same area as .cb-viewport, so the absolute
+          positioning math is unchanged.
+        */}
+        {!hideUI &&
+          selectedShape &&
+          editingId !== selectedShape.id &&
+          renderContextMenu({
+            shape: selectedShape,
+            camera,
+            messages,
+            patch: (next) => patchShape(selectedShape.id, next),
+            remove: () => removeShape(selectedShape.id),
+          })}
       </div>
     </BoardContext.Provider>
   );
