@@ -17,7 +17,7 @@ export type StickyColor =
 /** Structural contract every shape must satisfy. Custom shape kinds declare
  *  their own interface extending `Shape` with whatever extra fields they
  *  need — no index signature required. The board itself only reads the
- *  positional fields; kind-specific data is opaque. */
+ *  positional fields plus `disabled`; kind-specific data is opaque. */
 export interface Shape {
   id: string;
   type: string;
@@ -25,6 +25,13 @@ export interface Shape {
   y: number;
   w: number;
   h: number;
+  /** When `true`, the shape is rendered as normal but is inert:
+   *  not selectable, not draggable, not editable, no context menu. The
+   *  board passes no-op pointer handlers and lifecycle callbacks, and
+   *  adds the `cb-shape--disabled` class so consumer CSS can opt into a
+   *  "locked" visual cue. The shape can still be mutated programmatically
+   *  via `patchShape` / `setShapes` from the context. */
+  disabled?: boolean;
 }
 
 /** Built-in sticky-note shape. */
@@ -282,6 +289,13 @@ export interface CasmaBoardProps {
   /** Initial tool. Defaults to 'select'. Must match a kind's `toolButton.toolId`
    *  (or its `type`) if not 'select'. */
   defaultTool?: ToolId;
+
+  /** Shape *type* to spawn when the user double-clicks empty canvas (with
+   *  the select tool active). Pass `false` to disable. Snap-to-grid is
+   *  applied to the spawn position when `snapToGrid` is on. If the type
+   *  isn't registered in `shapeKinds`, the double-click is silently
+   *  ignored. Default: `'sticky'`. */
+  doubleClickSpawn?: string | false;
 
   /** Six overlay slots anchored over the viewport. Each accepts any
    *  ReactNode. When `bottomCenter` is omitted (and `hideUI` is false), the

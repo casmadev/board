@@ -90,6 +90,14 @@ export function useShapeCreationDrag() {
       cleanup();
     };
 
+    // Snap a single axis to the grid when snap-to-grid is on. Applied to
+    // the preview shape's position on every move so the ghost visibly
+    // jumps to grid cells while the user is still dragging — committing
+    // already snaps too, but the preview should match what the user is
+    // about to drop.
+    const snapAxis = (n: number) =>
+      snapToGrid ? Math.round(n / GRID_SIZE) * GRID_SIZE : n;
+
     const onMove = (ev: PointerEvent) => {
       if (!dragged) {
         if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD_PX) {
@@ -100,23 +108,31 @@ export function useShapeCreationDrag() {
         if (!w) return;
         const initial = opts.createInitialShape(w);
         if (!initial) return;
+        const snappedInitial: S = {
+          ...initial.shape,
+          x: snapAxis(initial.shape.x),
+          y: snapAxis(initial.shape.y),
+        };
         preview = {
           kind: initial.kind,
-          shape: initial.shape,
+          shape: snappedInitial,
+          // Offset baked in by kind.create (e.g. -w/2, -h/2 for centered
+          // creation). Stored from the *unsnapped* values so subsequent
+          // moves compute the raw target then re-snap to grid.
           offsetX: initial.shape.x - w.x,
           offsetY: initial.shape.y - w.y,
         };
-        setDragPreview({ kind: initial.kind, shape: initial.shape });
+        setDragPreview({ kind: initial.kind, shape: snappedInitial });
         return;
       }
       if (!preview) return;
       const w = worldAt(ev.clientX, ev.clientY);
       if (!w) return;
-      const nextShape = {
+      const nextShape: S = {
         ...preview.shape,
-        x: w.x + preview.offsetX,
-        y: w.y + preview.offsetY,
-      } as S;
+        x: snapAxis(w.x + preview.offsetX),
+        y: snapAxis(w.y + preview.offsetY),
+      };
       preview.shape = nextShape;
       setDragPreview({ kind: preview.kind, shape: nextShape });
     };

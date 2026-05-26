@@ -176,6 +176,17 @@
   pointer-events: none;
 }
 
+/* Disabled: shape is fully visible but transparent to pointer events,
+   so clicks fall through to whatever's behind (another shape, or the
+   viewport — which lets the user deselect by clicking on a locked
+   region). The board also passes no-op handlers as defense-in-depth.
+   Consumer CSS can override with extra "locked" visuals (opacity, lock
+   icon, hatched overlay) by targeting `.cb-shape--disabled.cb-<kind>`. */
+.cb-shape--disabled {
+  cursor: default;
+  pointer-events: none;
+}
+
 /* Sticky note — extends .cb-shape with surface chrome and a top-pivot
    transform origin for the wobble + edit-lift animation. The contact
    shadow is a subtle outward box-shadow that simulates ambient occlusion

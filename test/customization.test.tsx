@@ -495,6 +495,221 @@ describe('CasmaBoard customization', () => {
     });
   });
 
+  describe('Shape.disabled', () => {
+    const lockedSticky = {
+      id: 'locked',
+      type: 'sticky',
+      x: 0,
+      y: 0,
+      w: 192,
+      h: 192,
+      text: 'inert',
+      color: 'yellow',
+      disabled: true,
+    } as StickyShape;
+
+    it('renders disabled shapes with cb-shape--disabled and no state modifiers', () => {
+      render(
+        <CasmaBoard
+          defaultShapes={{ shapes: { locked: lockedSticky }, order: ['locked'] }}
+        />,
+      );
+      const el = document.querySelector('[data-shape-id="locked"]') as HTMLElement;
+      expect(el.className).toContain('cb-shape--disabled');
+      expect(el.className).not.toContain('cb-shape--selected');
+      expect(el.className).not.toContain('cb-shape--editing');
+      expect(el.className).not.toContain('cb-shape--dragging');
+    });
+
+    it('ignores pointerdown on a disabled shape — no selection, no drag', async () => {
+      render(
+        <CasmaBoard
+          defaultShapes={{ shapes: { locked: lockedSticky }, order: ['locked'] }}
+        />,
+      );
+      const el = document.querySelector('[data-shape-id="locked"]') as HTMLElement;
+      const user = userEvent.setup();
+      await user.pointer({ keys: '[MouseLeft>]', target: el });
+      await user.pointer({ coords: { x: 200, y: 200 } });
+      await user.pointer({ keys: '[/MouseLeft]', coords: { x: 200, y: 200 } });
+      // Still no selection / drag state after a full gesture.
+      expect(el.className).not.toContain('cb-shape--selected');
+      expect(el.className).not.toContain('cb-shape--dragging');
+    });
+
+    it('does not show the context menu for a disabled selected shape', () => {
+      // Force a stale selection by routing through useCasmaBoard, then
+      // confirm the context menu is suppressed because the shape is
+      // disabled.
+      function StaleSelector() {
+        const { setSelectedId } = useCasmaBoard();
+        return (
+          <button onClick={() => setSelectedId('locked')}>force-select</button>
+        );
+      }
+      render(
+        <CasmaBoard
+          defaultShapes={{ shapes: { locked: lockedSticky }, order: ['locked'] }}
+          slots={{ topRight: <StaleSelector /> }}
+        />,
+      );
+      act(() => {
+        screen.getByRole('button', { name: 'force-select' }).click();
+      });
+      expect(document.querySelector('.cb-context-menu')).toBeNull();
+    });
+
+    it('does not enter edit mode on double-click of a disabled shape', async () => {
+      render(
+        <CasmaBoard
+          defaultShapes={{ shapes: { locked: lockedSticky }, order: ['locked'] }}
+        />,
+      );
+      const el = document.querySelector('[data-shape-id="locked"]') as HTMLElement;
+      el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      // Sticky's contenteditable only attaches when editing=true; the
+      // disabled shape's onStartEdit is a no-op, so nothing flips.
+      expect(el.className).not.toContain('cb-shape--editing');
+      // Defensive: there should be no contenteditable surface.
+      expect(document.querySelector('[contenteditable="true"]')).toBeNull();
+    });
+  });
+
+  describe('doubleClickSpawn', () => {
+    // Stub the viewport's bounding rect so screenToWorld math works in
+    // jsdom (which otherwise reports 0×0 rects).
+    const stubViewport = (width = 1000, height = 800) => {
+      const vp = document.querySelector('.cb-viewport') as HTMLElement;
+      vp.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, right: width, bottom: height, width, height,
+          x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      return vp;
+    };
+
+    it('spawns the default sticky on double-click of empty canvas', () => {
+      render(<CasmaBoard />);
+      const vp = stubViewport();
+      act(() => {
+        vp.dispatchEvent(new MouseEvent('dblclick', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 400,
+          clientY: 300,
+        }));
+      });
+      const sticky = document.querySelector('.cb-sticky') as HTMLElement;
+      expect(sticky).not.toBeNull();
+      // Sticky default 192×192, centered on world (400, 300) → (304, 204).
+      expect(sticky.style.left).toBe('304px');
+      expect(sticky.style.top).toBe('204px');
+    });
+
+    it('applies snap-to-grid to the double-click spawn', () => {
+      render(<CasmaBoard snapToGrid />);
+      const vp = stubViewport();
+      act(() => {
+        vp.dispatchEvent(new MouseEvent('dblclick', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 400,
+          clientY: 300,
+        }));
+      });
+      const sticky = document.querySelector('.cb-sticky') as HTMLElement;
+      expect(sticky).not.toBeNull();
+      // Centered position (304, 204) snapped to GRID_SIZE=24 → (312, 216).
+      // (round(304/24)=13 → 312; round(204/24)=9 → 216)
+      expect(sticky.style.left).toBe('312px');
+      expect(sticky.style.top).toBe('216px');
+    });
+
+    it('does not spawn when doubleClickSpawn is false', () => {
+      render(<CasmaBoard doubleClickSpawn={false} />);
+      const vp = stubViewport();
+      act(() => {
+        vp.dispatchEvent(new MouseEvent('dblclick', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 400,
+          clientY: 300,
+        }));
+      });
+      expect(document.querySelector('[data-shape-id]')).toBeNull();
+    });
+
+    it('does not spawn when a non-select tool is active', () => {
+      render(<CasmaBoard defaultTool="sticky" />);
+      const vp = stubViewport();
+      act(() => {
+        vp.dispatchEvent(new MouseEvent('dblclick', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 400,
+          clientY: 300,
+        }));
+      });
+      // tool === 'sticky' suppresses dblclick spawn; no shape via this path.
+      // (The two underlying single clicks of a dblclick would each create
+      // one shape via the tool flow — but jsdom doesn't synthesize those
+      // for a raw dblclick dispatch. Asserting no shape is enough here.)
+      expect(document.querySelector('[data-shape-id]')).toBeNull();
+    });
+
+    it('does not spawn when the double-click lands on an existing shape', () => {
+      // Pre-populate a sticky; double-clicking it should enter edit on
+      // that sticky (sticky's own handler), not spawn a new one.
+      const existing = {
+        id: 'a',
+        type: 'sticky' as const,
+        x: 0,
+        y: 0,
+        w: 192,
+        h: 192,
+        text: '',
+        color: 'yellow' as const,
+      };
+      render(
+        <CasmaBoard
+          defaultShapes={{ shapes: { a: existing }, order: ['a'] }}
+        />,
+      );
+      stubViewport();
+      const stickyEl = document.querySelector('[data-shape-id="a"]') as HTMLElement;
+      act(() => {
+        stickyEl.dispatchEvent(new MouseEvent('dblclick', {
+          bubbles: true,
+          cancelable: true,
+        }));
+      });
+      // No second sticky created — still just the pre-populated one.
+      expect(document.querySelectorAll('[data-shape-id]').length).toBe(1);
+    });
+  });
+
+  describe('drag preview snap-to-grid', () => {
+    it('snaps the preview shape position to the grid during drag when snapToGrid is on', async () => {
+      render(<CasmaBoard snapToGrid />);
+      const vp = document.querySelector('.cb-viewport') as HTMLElement;
+      vp.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800,
+          x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      const toolBtn = screen.getByRole('button', { name: /sticky note/i });
+
+      const user = userEvent.setup();
+      await user.pointer({ keys: '[MouseLeft>]', target: toolBtn });
+      // Move to (400, 300) — sticky center offset gives raw (304, 204).
+      await user.pointer({ coords: { x: 400, y: 300 } });
+
+      const preview = document.querySelector('.cb-shape--preview') as HTMLElement;
+      expect(preview).not.toBeNull();
+      // Snapped: (312, 216) — same math as the spawn snap test above.
+      expect(preview.style.left).toBe('312px');
+      expect(preview.style.top).toBe('216px');
+
+      await user.pointer({ keys: '[/MouseLeft]', coords: { x: 400, y: 300 } });
+    });
+  });
+
   describe('useCasmaBoard hook', () => {
     function ToolReadout() {
       const { tool, setTool } = useCasmaBoard();

@@ -81,6 +81,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
     generateId = defaultIdGen,
     shapeKinds: shapeKindsProp,
     defaultTool = 'select',
+    doubleClickSpawn = 'sticky',
     slots,
     contextMenu,
   } = props;
@@ -210,6 +211,48 @@ export function CasmaBoard(props: CasmaBoardProps) {
       return created;
     },
     [toolKindMap, generateId, snapToGrid, snap, addShapeFn, select],
+  );
+
+  // Double-click on empty canvas: spawn the configured default shape kind
+  // (by `type`, not toolId — that's what consumers think of). Snap-to-grid
+  // is applied the same way as the single-click creation path. Skipped
+  // when a non-select tool is active (the first click already created a
+  // shape — dropping another on the dblclick would be surprising) and
+  // when the click happens on an existing shape (the shape's own dblclick
+  // handler takes over, e.g. sticky's enter-edit).
+  const handleViewportDoubleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (doubleClickSpawn === false) return;
+      if (tool !== 'select') return;
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-shape-id]')) return;
+      const kind = kindByType.get(doubleClickSpawn);
+      if (!kind) return; // type not registered — silently no-op
+      const el = viewportRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const world = screenToWorld(cameraRef.current, {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      });
+      const created = kind.create(generateId(), world.x, world.y);
+      if (snapToGrid) {
+        created.x = snap(created.x);
+        created.y = snap(created.y);
+      }
+      addShapeFn(created);
+      select(created.id);
+    },
+    [
+      doubleClickSpawn,
+      tool,
+      kindByType,
+      generateId,
+      snapToGrid,
+      snap,
+      addShapeFn,
+      select,
+    ],
   );
 
   // Click on empty viewport: create a shape (for any non-select tool) or
@@ -377,6 +420,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
               : null),
           }}
           onPointerDown={handleViewportPointerDown}
+          onDoubleClick={handleViewportDoubleClick}
           onPointerMove={panZoom.onPointerMove}
           onPointerUp={panZoom.onPointerUp}
           onPointerCancel={panZoom.onPointerCancel}
@@ -386,10 +430,18 @@ export function CasmaBoard(props: CasmaBoardProps) {
               const kind = kindByType.get(shape.type);
               if (!kind) return null; // unknown shape type — skip silently
               const Component = kind.Component;
-              const handlers = dragHandlersFactory(shape.id, shape.x, shape.y);
-              const isSelected = selectedId === shape.id;
-              const isEditing = editingId === shape.id;
-              const isDragging = draggingId === shape.id;
+              const isDisabled = shape.disabled === true;
+              // Disabled shapes are visible but inert: no drag/select/edit
+              // wiring, so the renderer receives no-op handlers and the
+              // viewport click never starts a gesture on them. The
+              // cb-shape--disabled class lets CSS opt into a different
+              // cursor / locked visual.
+              const handlers = isDisabled
+                ? INERT_POINTER_HANDLERS
+                : dragHandlersFactory(shape.id, shape.x, shape.y);
+              const isSelected = !isDisabled && selectedId === shape.id;
+              const isEditing = !isDisabled && editingId === shape.id;
+              const isDragging = !isDisabled && draggingId === shape.id;
               // Pre-composed shape class. Renderers spread this on their root
               // to opt into `cb-shape` baseline (position, cursor, transition)
               // plus state modifiers (selection ring, z-lift, grabbing cursor).
@@ -397,7 +449,8 @@ export function CasmaBoard(props: CasmaBoardProps) {
                 'cb-shape' +
                 (isSelected ? ' cb-shape--selected' : '') +
                 (isEditing ? ' cb-shape--editing' : '') +
-                (isDragging ? ' cb-shape--dragging' : '');
+                (isDragging ? ' cb-shape--dragging' : '') +
+                (isDisabled ? ' cb-shape--disabled' : '');
               return (
                 <Component
                   key={shape.id}
@@ -410,10 +463,10 @@ export function CasmaBoard(props: CasmaBoardProps) {
                   messages={messages}
                   pointerHandlers={handlers}
                   className={className}
-                  onSelect={() => select(shape.id)}
-                  onStartEdit={() => setEditingId(shape.id)}
-                  onCommitEdit={() => endEdit(shape.id)}
-                  onCancelEdit={() => endEdit(shape.id)}
+                  onSelect={isDisabled ? noop : () => select(shape.id)}
+                  onStartEdit={isDisabled ? noop : () => setEditingId(shape.id)}
+                  onCommitEdit={isDisabled ? noop : () => endEdit(shape.id)}
+                  onCancelEdit={isDisabled ? noop : () => endEdit(shape.id)}
                   patch={(next) => patchShape(shape.id, next)}
                 />
               );
@@ -461,6 +514,7 @@ export function CasmaBoard(props: CasmaBoardProps) {
         */}
         {!hideUI &&
           selectedShape &&
+          !selectedShape.disabled &&
           editingId !== selectedShape.id &&
           renderContextMenu({
             shape: selectedShape,
