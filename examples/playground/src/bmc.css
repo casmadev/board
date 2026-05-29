@@ -14,7 +14,7 @@
 
    Composed inline with the transform/box-shadow rules the package already
    applies, so sticky tilt + selection ring still animate. */
-.bmc-board .cb-sticky {
+.bmc-board .cb-sticky:not(.cb-shape--dragging) {
   transition:
     left 110ms cubic-bezier(0.2, 0.85, 0.3, 1),
     top 110ms cubic-bezier(0.2, 0.85, 0.3, 1),
