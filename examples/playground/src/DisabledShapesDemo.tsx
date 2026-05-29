@@ -6,6 +6,7 @@ import {
   useCasmaBoard,
   useShapeCreationDrag,
 } from '@casmadev/board';
+import { FitCameraToContents } from './FitCameraToContents';
 import type {
   Shape,
   ShapeKind,
@@ -33,9 +34,22 @@ const CARD_H = 120;
 function CardRenderer({
   shape,
   className,
+  selected,
+  editing,
   pointerHandlers,
   onSelect,
 }: ShapeRenderProps<CardShape>) {
+  // The board's selection ring is a box-shadow applied via the
+  // .cb-shape--selected class. Because this card sets its own box-shadow
+  // inline, and inline styles outrank stylesheet rules, that class ring
+  // gets suppressed — so we compose it in ourselves. (The sticky kind gets
+  // it for free since its shadow lives in CSS, where the class can stack.)
+  // --cb-selection-ring is defined on .cb-root, which this card sits in.
+  const baseShadow = shape.disabled
+    ? '0 1px 2px rgba(0,0,0,0.08)'
+    : '0 8px 16px rgba(0,0,0,0.10)';
+  const boxShadow =
+    selected || editing ? `${baseShadow}, var(--cb-selection-ring)` : baseShadow;
   return (
     <div
       data-shape-id={shape.id}
@@ -53,9 +67,7 @@ function CardRenderer({
           ? '1px solid rgba(0,0,0,0.12)'
           : '1px solid rgba(0,0,0,0.16)',
         borderRadius: 10,
-        boxShadow: shape.disabled
-          ? '0 1px 2px rgba(0,0,0,0.08)'
-          : '0 8px 16px rgba(0,0,0,0.10)',
+        boxShadow,
         padding: 14,
         display: 'flex',
         flexDirection: 'column',
@@ -272,9 +284,16 @@ export default function DisabledShapesDemo() {
       // toolbar still only exposes cards.
       shapeKinds={[cardKind, stickyKind]}
       defaultShapes={initialShapes}
-      defaultCamera={{ x: 80, y: 60, zoom: 1 }}
       slots={{
-        topLeft: <DemoNav />,
+        topLeft: (
+          <>
+            <DemoNav />
+            {/* Frame the seeded cards + note on load. maxZoom={1} keeps the
+                small cluster at native size rather than magnifying it. With
+                no `bounds`, it fits every shape on the board. */}
+            <FitCameraToContents maxZoom={1} />
+          </>
+        ),
         topRight: <InfoPanel />,
         bottomCenter: <CardToolbar />,
       }}

@@ -1,4 +1,3 @@
-import { useLayoutEffect } from 'react';
 import { CasmaBoard, stickyKind, useCasmaBoard } from '@casmadev/board';
 import type {
   Shape,
@@ -7,6 +6,7 @@ import type {
   ShapesState,
 } from '@casmadev/board';
 import { DemoNav } from './DemoNav';
+import { FitCameraToContents } from './FitCameraToContents';
 import { StickyFanToolbar } from './StickyFanToolbar';
 import './bmc.css';
 
@@ -341,47 +341,6 @@ function clampOutsideBMC(shape: Shape): Partial<Shape> | void {
 }
 
 /* ------------------------------------------------------------------ */
-/* AutoCenterCanvas — invisible helper that measures the viewport on  */
-/* mount and centers + fits a region of world-coordinate `width`×     */
-/* `height` inside it. Avoids hard-coding a `defaultCamera` that      */
-/* assumes a particular window size.                                  */
-/*                                                                    */
-/* useLayoutEffect runs after DOM mutation but before paint, so the   */
-/* user never sees an off-center frame on load.                       */
-/* ------------------------------------------------------------------ */
-
-function AutoCenterCanvas({
-  width,
-  height,
-  padding = 0.95,
-}: {
-  width: number;
-  height: number;
-  padding?: number;
-}) {
-  const { viewportRef, setCamera } = useCasmaBoard();
-  useLayoutEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-    const zoom = Math.min(
-      (rect.width * padding) / width,
-      (rect.height * padding) / height,
-    );
-    setCamera({
-      x: (rect.width - width * zoom) / 2,
-      y: (rect.height - height * zoom) / 2,
-      zoom,
-    });
-    // intentionally empty deps — center once on mount, then let the
-    // user pan / zoom freely.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return null;
-}
-
-/* ------------------------------------------------------------------ */
 /* BmcDemo                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -466,7 +425,13 @@ export default function BmcDemo() {
         topLeft: (
           <>
             <DemoNav />
-            <AutoCenterCanvas width={BMC_WIDTH} height={BMC_HEIGHT} />
+            {/* Frame the full BMC canvas region on load. Explicit bounds (not
+                "all shapes") so the empty grid still frames correctly and any
+                stickies the user dragged far off-canvas don't skew the fit. */}
+            <FitCameraToContents
+              bounds={{ x: 0, y: 0, w: BMC_WIDTH, h: BMC_HEIGHT }}
+              padding={0.95}
+            />
           </>
         ),
         topRight: <BmcControlPanel />,
