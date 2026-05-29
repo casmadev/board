@@ -431,22 +431,9 @@ function BmcControlPanel() {
   return (
     <button
       type="button"
+      className="cb-button cb-button--danger cb-button--raised"
       onClick={clearAll}
       disabled={userCount === 0}
-      style={{
-        appearance: 'none',
-        border: '1px solid rgba(0,0,0,0.1)',
-        background: userCount === 0 ? '#f3f4f6' : '#fff',
-        color: userCount === 0 ? 'rgba(0,0,0,0.35)' : '#b91c1c',
-        fontSize: 12,
-        fontWeight: 600,
-        padding: '8px 14px',
-        borderRadius: 8,
-        cursor: userCount === 0 ? 'not-allowed' : 'pointer',
-        boxShadow: '0 4px 10px rgba(0,0,0,0.06)',
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      }}
     >
       Clear all
     </button>

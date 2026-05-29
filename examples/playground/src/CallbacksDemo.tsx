@@ -87,61 +87,30 @@ function EventLogPanel({
 
   return (
     <div
-      style={{
-        background: 'white',
-        border: '1px solid rgba(0,0,0,0.1)',
-        borderRadius: 10,
-        boxShadow: '0 6px 18px rgba(0,0,0,0.08)',
-        display: 'flex',
-        flexDirection: 'column',
-        width: 360,
-        maxHeight: 'calc(100vh - 80px)',
-        overflow: 'hidden',
-        fontSize: 12,
-      }}
+      className="cb-panel cb-panel--flush"
+      style={{ width: 360, maxHeight: 'calc(100vh - 80px)' }}
     >
       <div
         style={{
           padding: '10px 12px',
-          borderBottom: '1px solid rgba(0,0,0,0.08)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
         }}
       >
-        <h2
-          style={{
-            margin: 0,
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: 0.2,
-            color: 'rgba(0,0,0,0.85)',
-            textTransform: 'uppercase',
-          }}
-        >
-          Event log
-        </h2>
+        <h2 className="cb-panel__title">Event log</h2>
         <button
           type="button"
+          className="cb-button cb-button--sm"
           onClick={onClear}
-          style={{
-            appearance: 'none',
-            border: '1px solid rgba(0,0,0,0.12)',
-            background: '#fafaf7',
-            borderRadius: 6,
-            padding: '4px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-            color: 'rgba(0,0,0,0.7)',
-          }}
         >
           Clear
         </button>
       </div>
+      <hr className="cb-separator" />
       <div
         style={{
           padding: '8px 12px',
-          borderBottom: '1px solid rgba(0,0,0,0.08)',
           display: 'flex',
           flexWrap: 'wrap',
           gap: 4,
@@ -173,6 +142,7 @@ function EventLogPanel({
           );
         })}
       </div>
+      <hr className="cb-separator" />
       <div
         ref={listRef}
         style={{

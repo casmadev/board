@@ -35,39 +35,13 @@ function DemoControlsPanel({
   setDepth3d,
 }: DemoControlsProps) {
   return (
-    <div
-      style={{
-        background: 'white',
-        border: '1px solid rgba(0,0,0,0.1)',
-        borderRadius: 10,
-        padding: 10,
-        boxShadow: '0 6px 18px rgba(0,0,0,0.08)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        fontSize: 12,
-        minWidth: 220,
-        maxHeight: 'calc(100vh - 80px)',
-        overflowY: 'auto',
-      }}
-    >
-      <h2
-        style={{
-          margin: 0,
-          fontSize: 13,
-          fontWeight: 600,
-          letterSpacing: 0.2,
-          color: 'rgba(0,0,0,0.7)',
-          textTransform: 'uppercase',
-          paddingBottom: 4,
-          borderBottom: '1px solid rgba(0,0,0,0.08)',
-        }}
-      >
-        Demo parameters
-      </h2>
-      <label style={rowStyle}>
-        <span style={labelStyle}>Text overflow</span>
+    <div className="cb-panel cb-panel--scroll" style={{ minWidth: 220 }}>
+      <h2 className="cb-panel__title">Demo parameters</h2>
+      <hr className="cb-separator" />
+      <label className="cb-field">
+        <span className="cb-label">Text overflow</span>
         <select
+          className="cb-select"
           value={textOverflow}
           onChange={(e) => setTextOverflow(e.target.value as TextOverflow)}
         >
@@ -75,12 +49,14 @@ function DemoControlsPanel({
           <option value="truncate">truncate</option>
         </select>
       </label>
-      <fieldset style={fieldsetStyle}>
-        <legend style={labelStyle}>Background</legend>
-        <div style={{ display: 'inline-flex', gap: 10 }}>
+      <hr className="cb-separator" />
+      <fieldset className="cb-field">
+        <legend className="cb-label">Background</legend>
+        <div className="cb-option-group">
           {BACKGROUNDS.map((bg) => (
-            <label key={bg} style={checkRowStyle}>
+            <label key={bg} className="cb-option">
               <input
+                className="cb-radio"
                 type="radio"
                 name="background"
                 value={bg}
@@ -92,82 +68,37 @@ function DemoControlsPanel({
           ))}
         </div>
       </fieldset>
-      <label style={checkRowStyle}>
+      <hr className="cb-separator" />
+      <label className="cb-option">
         <input
+          className="cb-checkbox"
           type="checkbox"
           checked={snapToGrid}
           onChange={(e) => setSnapToGrid(e.target.checked)}
         />
         Snap to grid
       </label>
-      <label style={{ ...rowStyle, alignItems: 'center' }}>
-        <span style={labelStyle}>
+      <hr className="cb-separator" />
+      <label className="cb-field">
+        <span className="cb-label">
           3D depth
-          <span
-            style={{
-              fontVariantNumeric: 'tabular-nums',
-              color: 'rgba(0,0,0,0.55)',
-              marginInlineStart: 6,
-            }}
-          >
+          <span className="cb-label__hint">
             {depth3d === 0 ? 'off' : `${depth3d}px`}
           </span>
         </span>
         <input
+          className="cb-range"
           type="range"
           min={0}
           max={2400}
           step={50}
           value={depth3d}
           onChange={(e) => setDepth3d(Number(e.target.value))}
-          style={{ width: '100%' }}
         />
       </label>
     </div>
   );
 }
-
-const rowStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 4,
-};
-
-const labelStyle: React.CSSProperties = {
-  color: 'rgba(0,0,0,0.65)',
-  fontWeight: 500,
-};
-
-const checkRowStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-};
-
-const fieldsetStyle: React.CSSProperties = {
-  border: 'none',
-  padding: 0,
-  margin: 0,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 4,
-};
-
-const miniBtn: React.CSSProperties = {
-  appearance: 'none',
-  border: '1px solid rgba(0,0,0,0.1)',
-  background: '#fafaf7',
-  width: 22,
-  height: 22,
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontSize: 13,
-  lineHeight: 1,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: 0,
-};
 
 /* ------------------------------------------------------------------ */
 /* Bottom-left selection summary.                                     */
@@ -177,23 +108,15 @@ function SelectionInspector() {
   const { selectedShape, setSelectedId } = useCasmaBoard();
   if (!selectedShape) return null;
   return (
-    <div
-      style={{
-        background: 'white',
-        border: '1px solid rgba(0,0,0,0.1)',
-        borderRadius: 8,
-        padding: '6px 10px',
-        fontSize: 12,
-        boxShadow: '0 4px 10px rgba(0,0,0,0.06)',
-        display: 'inline-flex',
-        gap: 8,
-        alignItems: 'center',
-      }}
-    >
+    <div className="cb-panel cb-panel--inline">
       <span>
         Selected <strong>{selectedShape.type}</strong>
       </span>
-      <button onClick={() => setSelectedId(null)} style={miniBtn}>
+      <button
+        type="button"
+        className="cb-button cb-button--sm"
+        onClick={() => setSelectedId(null)}
+      >
         clear
       </button>
     </div>

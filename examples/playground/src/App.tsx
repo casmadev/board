@@ -1,4 +1,5 @@
 import '@casmadev/board/styles.css';
+import './panels.css';
 import './fan-toolbar.css';
 import MainDemo from './MainDemo';
 import DisabledShapesDemo from './DisabledShapesDemo';

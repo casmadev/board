@@ -246,35 +246,10 @@ const initialShapes: ShapesState = (() => {
 
 function InfoPanel() {
   return (
-    <div
-      style={{
-        background: 'white',
-        border: '1px solid rgba(0,0,0,0.1)',
-        borderRadius: 10,
-        padding: 14,
-        boxShadow: '0 6px 18px rgba(0,0,0,0.08)',
-        maxWidth: 280,
-        fontSize: 12,
-        lineHeight: 1.5,
-        color: 'rgba(0,0,0,0.7)',
-      }}
-    >
-      <h2
-        style={{
-          margin: 0,
-          fontSize: 13,
-          fontWeight: 600,
-          letterSpacing: 0.2,
-          color: 'rgba(0,0,0,0.85)',
-          textTransform: 'uppercase',
-          paddingBottom: 6,
-          borderBottom: '1px solid rgba(0,0,0,0.08)',
-          marginBottom: 8,
-        }}
-      >
-        Shape.disabled
-      </h2>
-      <p style={{ margin: 0 }}>
+    <div className="cb-panel cb-panel--narrow">
+      <h2 className="cb-panel__title">Shape.disabled</h2>
+      <hr className="cb-separator" />
+      <p className="cb-panel__text">
         Set <code>disabled: true</code> on any shape to make it inert — the
         board passes no-op pointer handlers and adds a{' '}
         <code>cb-shape--disabled</code> class. Pre-populated here are a live

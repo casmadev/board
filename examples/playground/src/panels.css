@@ -1,0 +1,251 @@
+/* Playground panel kit — reusable cb-* chrome for the demo overlays (the
+   top-left nav menu, the demo-parameters card, info cards, the event log).
+   Built on the same --cb-* design tokens the board exposes on .cb-root, so
+   the panels theme in lockstep with the board surface. Every panel renders
+   inside a slot (a descendant of .cb-root), so those vars cascade in; the
+   fallbacks keep the classes usable even if a panel is ever mounted on its
+   own outside a board.
+
+   This file is playground-only — it ships with the examples, never with
+   the package. The names here (cb-panel, cb-field, cb-button, …) are
+   distinct from the component classes the library owns (cb-toolbar,
+   cb-tool-btn, cb-zoom, …), so the two never collide. */
+
+/* ------------------------------------------------------------------ */
+/* Panel surface                                                      */
+/* ------------------------------------------------------------------ */
+
+.cb-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--cb-surface, #fff);
+  border: 1px solid var(--cb-surface-border, rgba(0, 0, 0, 0.1));
+  border-radius: 10px;
+  box-shadow: var(--cb-shadow, 0 6px 18px rgba(0, 0, 0, 0.1));
+  color: var(--cb-text, #1a1a1a);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Row layout — for chip-like panels whose children sit side by side
+   (the selection inspector) rather than stacked. */
+.cb-panel--inline {
+  flex-direction: row;
+  align-items: center;
+}
+
+/* Tab strip — a tight inline panel for the nav menu, where each tab
+   carries its own padding so the panel itself stays slim. */
+.cb-panel--tabs {
+  gap: 4px;
+  padding: 4px;
+}
+
+/* Tall control panels: cap the height to the viewport and scroll inside
+   rather than running off the bottom of the screen. */
+.cb-panel--scroll {
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+
+/* Prose-style info cards — hold the measure to a comfortable width. */
+.cb-panel--narrow {
+  max-width: 280px;
+}
+
+/* Flush panels manage their own internal padding (e.g. the event log,
+   whose list must reach the edges and scroll). Separators dropped straight
+   into a flush panel span edge to edge. */
+.cb-panel--flush {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.cb-panel__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  color: var(--cb-text-muted, rgba(0, 0, 0, 0.55));
+}
+
+.cb-panel__text {
+  margin: 0;
+  color: var(--cb-text-muted, rgba(0, 0, 0, 0.55));
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------------ */
+/* Separator — meant for <hr>. Resets the UA border + margin and draws a  */
+/* single hairline. Spacing between it and its neighbours comes from the  */
+/* panel's flex `gap`, so no own margin (which would compound with gap).  */
+/* It respects its container's padding: inset inside a padded .cb-panel,  */
+/* full-bleed inside a .cb-panel--flush.                                  */
+/* ------------------------------------------------------------------ */
+
+.cb-separator {
+  border: none;
+  margin: 0;
+  block-size: 1px;
+  background: var(--cb-surface-border, rgba(0, 0, 0, 0.1));
+}
+
+/* ------------------------------------------------------------------ */
+/* Fields, labels and the basic controls                              */
+/* ------------------------------------------------------------------ */
+
+/* A label stacked above its control. The border/margin/padding resets let
+   a <fieldset> wear this class without the UA's default chrome. */
+.cb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
+.cb-label {
+  color: var(--cb-text-muted, rgba(0, 0, 0, 0.65));
+  font-weight: 500;
+}
+
+/* Zero the UA padding when a <legend> is used as a field label. */
+legend.cb-label {
+  padding: 0;
+}
+
+/* Trailing read-out next to a label (e.g. the live "800px" by 3D depth). */
+.cb-label__hint {
+  margin-inline-start: 6px;
+  color: var(--cb-text-muted, rgba(0, 0, 0, 0.55));
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A control paired inline with its caption — a checkbox or radio + text. */
+.cb-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* A row of options (radio group / checkbox group). */
+.cb-option-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Native radio/checkbox theming. `accent-color` tints the browser's own
+   widget — full platform behaviour + accessibility, just in the board's
+   accent colour. */
+.cb-radio,
+.cb-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--cb-accent, #2563eb);
+  cursor: pointer;
+}
+
+.cb-select {
+  appearance: none;
+  padding: 5px 8px;
+  background: var(--cb-surface, #fff);
+  border: 1px solid var(--cb-surface-border, rgba(0, 0, 0, 0.1));
+  border-radius: 6px;
+  color: var(--cb-text, #1a1a1a);
+  font: inherit;
+  cursor: pointer;
+}
+.cb-select:focus-visible {
+  outline: none;
+  border-color: var(--cb-accent, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+
+.cb-range {
+  width: 100%;
+  accent-color: var(--cb-accent, #2563eb);
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------------ */
+/* Buttons                                                            */
+/* ------------------------------------------------------------------ */
+
+.cb-button {
+  appearance: none;
+  padding: 8px 14px;
+  background: var(--cb-surface, #fff);
+  border: 1px solid var(--cb-surface-border, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  color: var(--cb-text, #1a1a1a);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.cb-button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.04);
+}
+.cb-button:focus-visible {
+  outline: none;
+  border-color: var(--cb-accent, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+.cb-button:disabled {
+  background: #f3f4f6;
+  color: rgba(0, 0, 0, 0.35);
+  cursor: not-allowed;
+}
+
+/* Compact button — for inline actions inside chips and headers. */
+.cb-button--sm {
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+/* Raised — a button that floats on its own in a slot (not inside a panel)
+   borrows the panel elevation so it reads as a surface of its own. */
+.cb-button--raised {
+  box-shadow: var(--cb-shadow, 0 6px 18px rgba(0, 0, 0, 0.1));
+}
+
+/* Destructive action — red label, red-tinted hover. */
+.cb-button--danger {
+  color: var(--cb-danger, #dc2626);
+}
+.cb-button--danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+/* ------------------------------------------------------------------ */
+/* Tabs — the pill-style links in the nav menu                        */
+/* ------------------------------------------------------------------ */
+
+.cb-tab {
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--cb-text-muted, rgba(0, 0, 0, 0.55));
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+.cb-tab:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+.cb-tab--active {
+  background: #f3f4f6;
+  color: var(--cb-text, #1a1a1a);
+  font-weight: 600;
+}
