@@ -5,6 +5,8 @@ Sticky notes with a handwritten font, slight 3D tilt that
 responds to camera motion, infinite pan & zoom, multilingual UI (8 shipped
 locales including RTL), and full TypeScript types.
 
+![Sticky notes on the board — drag, tilt, pan & zoom](assets/hero.gif)
+
 ```tsx
 import { CasmaBoard } from '@casmadev/board';
 import '@casmadev/board/styles.css';
