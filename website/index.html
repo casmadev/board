@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@casmadev/board — a DOM + CSS React whiteboard</title>
+    <meta
+      name="description"
+      content="A React whiteboard component built with DOM + CSS — sticky notes, infinite pan & zoom, multilingual UI, and full TypeScript types."
+    />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗒️</text></svg>" />
+    <!-- Relative so the page works under the /board/ project-pages subpath. -->
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="hero__inner">
+        <p class="eyebrow">React whiteboard · DOM + CSS · zero&nbsp;runtime&nbsp;deps</p>
+        <h1 class="wordmark">
+          <span class="wordmark__scope">@casmadev/</span><span class="wordmark__name">board</span>
+        </h1>
+        <p class="tagline">
+          A whiteboard component built with <strong>DOM&nbsp;+&nbsp;CSS</strong> — no
+          <code>&lt;canvas&gt;</code>. Sticky notes with a handwritten font and a
+          subtle 3D tilt, infinite pan&nbsp;&amp; zoom, 8 shipped locales
+          (including RTL), and full TypeScript types.
+        </p>
+
+        <div class="install" role="group" aria-label="Install command">
+          <code class="install__cmd"><span class="install__prompt">$</span> npm install @casmadev/board</code>
+          <button class="install__copy" type="button" data-copy="npm install @casmadev/board" aria-label="Copy install command">
+            Copy
+          </button>
+        </div>
+
+        <nav class="cta" aria-label="Primary">
+          <a class="btn btn--primary" href="demo/">
+            <span class="btn__label">Open the Sandbox</span>
+            <span class="btn__sub">Live, interactive demos</span>
+          </a>
+          <a class="btn btn--secondary" href="api/">
+            <span class="btn__label">API Reference</span>
+            <span class="btn__sub">Every prop, hook &amp; type</span>
+          </a>
+        </nav>
+      </div>
+
+      <figure class="preview">
+        <!-- Copied into the site root at assembly time (see pages.yml). -->
+        <img src="hero.gif" alt="Sticky notes being dragged, tilted, panned and zoomed on the board" loading="lazy" />
+        <figcaption>Sticky notes drag, tilt with the camera, and live on an infinite canvas.</figcaption>
+      </figure>
+    </header>
+
+    <main>
+      <section class="features" aria-label="Highlights">
+        <article class="feature">
+          <h2>DOM, not canvas</h2>
+          <p>Every shape is a real, inspectable, accessible DOM node. Style it with CSS variables; no draw loop to fight.</p>
+        </article>
+        <article class="feature">
+          <h2>Composable by default</h2>
+          <p>Swap the toolbar, context menu, or the sticky note itself. Seven overlay slots and a <code>useCasmaBoard()</code> hook.</p>
+        </article>
+        <article class="feature">
+          <h2>Typed &amp; tree-shakeable</h2>
+          <p>Full TypeScript types, per-locale subpath exports, and zero runtime dependencies. Ships ESM + CJS.</p>
+        </article>
+      </section>
+
+      <section class="quickstart" aria-label="Quick start">
+        <h2>Quick start</h2>
+        <pre><code>import { CasmaBoard } from '@casmadev/board';
+import '@casmadev/board/styles.css';
+
+export default function App() {
+  return &lt;CasmaBoard /&gt;;
+}</code></pre>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        <a href="https://github.com/casmadev/board">GitHub</a>
+        <span aria-hidden="true">·</span>
+        <a href="https://www.npmjs.com/package/@casmadev/board">npm</a>
+        <span aria-hidden="true">·</span>
+        <a href="api/">API Reference</a>
+        <span aria-hidden="true">·</span>
+        <a href="demo/">Sandbox</a>
+      </p>
+      <p class="license">MIT licensed.</p>
+    </footer>
+
+    <script>
+      // Progressive enhancement: copy-to-clipboard on the install command.
+      document.querySelectorAll('.install__copy').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(btn.dataset.copy);
+            const prev = btn.textContent;
+            btn.textContent = 'Copied!';
+            btn.classList.add('is-copied');
+            setTimeout(() => {
+              btn.textContent = prev;
+              btn.classList.remove('is-copied');
+            }, 1500);
+          } catch {
+            /* clipboard blocked — no-op, the command is still visible */
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

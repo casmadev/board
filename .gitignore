@@ -8,3 +8,7 @@ coverage
 examples/*/dist
 examples/*/node_modules
 *.tsbuildinfo
+
+# GitHub Pages build output (assembled in CI / for local verification)
+site/
+api-docs/
