@@ -1,0 +1,17 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "tsconfig": "tsconfig.json",
+  "out": "api-docs",
+  "name": "@casmadev/board — API Reference",
+  "readme": "none",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "excludeExternals": true,
+  "hideGenerator": false,
+  "navigationLinks": {
+    "Home": "../",
+    "Demo": "../demo/",
+    "npm": "https://www.npmjs.com/package/@casmadev/board"
+  }
+}

@@ -1,0 +1,80 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow the workflow to publish to GitHub Pages via the deploy-pages action.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; let an in-progress run finish rather than cancel it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            examples/playground/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install playground dependencies
+        run: npm ci --prefix examples/playground
+
+      - name: Build API reference (TypeDoc)
+        run: npm run docs
+
+      - name: Build playground (subpath base for project pages)
+        run: npm run build --prefix examples/playground
+        env:
+          # Project pages live at https://<owner>.github.io/board/, and the
+          # demo is mounted at /demo/. Local `npm run dev` leaves this unset.
+          VITE_BASE: /board/demo/
+
+      - name: Assemble site/
+        run: |
+          rm -rf site
+          mkdir -p site
+          # 1. Landing page at the root.
+          cp -R website/. site/
+          # 2. Hero GIF the landing page references (single source of truth).
+          cp assets/hero.gif site/hero.gif
+          # 3. Playground production build → /demo/.
+          mkdir -p site/demo
+          cp -R examples/playground/dist/. site/demo/
+          # 4. TypeDoc output → /api/.
+          mkdir -p site/api
+          cp -R api-docs/. site/api/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
